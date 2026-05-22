@@ -527,5 +527,34 @@ if [[ "$INBOUND_SSH" == "y" ]]; then
   step_done "ssh-in"
 fi
 
-echo "itc-bootstrap: inbound SSH handled — final steps in subsequent commits"
+# ─── [marketplace] Register marketplace + install itc-base ─────────────────────
+
+step_start "marketplace" "Registering itc-claude-marketplace + installing itc-base"
+
+# Add marketplace (idempotent: claude reports an error but doesn't break if already added)
+if claude plugin marketplace list --json 2>/dev/null \
+   | jq -e '.[] | select(.name == "itc-claude-marketplace")' >/dev/null; then
+  info "Marketplace itc-claude-marketplace already registered"
+else
+  claude plugin marketplace add screpeau-itc/itc-claude-marketplace
+fi
+
+# Install itc-base
+# NOTE: itc-base plugin does not yet exist in the marketplace as of this script being written;
+# this install will fail until the layer-2 batch creates it. The installer treats that as a
+# non-fatal warning at the final hand-off step rather than failing here.
+if claude plugin list 2>/dev/null | grep -q "itc-base"; then
+  info "Plugin itc-base already installed"
+else
+  if claude plugin install itc-base@itc-claude-marketplace 2>&1; then
+    info "Installed plugin: itc-base"
+  else
+    info "${C_YELLOW}itc-base plugin install failed — likely the plugin does not yet exist in the marketplace.${C_RESET}"
+    info "${C_YELLOW}This is expected during the layer-1-only phase. Continuing.${C_RESET}"
+  fi
+fi
+
+step_done "marketplace"
+
+echo "itc-bootstrap: marketplace + plugin handled — hand-off in next commit"
 exit 0
