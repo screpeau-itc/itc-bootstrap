@@ -595,12 +595,11 @@ info "Launching Claude session in your workspace..."
 sleep 2
 
 cd "$WORKSPACE_DIR"
-# Use `exec` to replace this shell with claude. Initial prompt as positional argument
-# matches claude CLI 2.1.x convention. If your installed CLI uses different syntax,
-# the worst case is claude starts without the initial prompt — the user can manually
-# type /itc-base-setup at the first turn.
-exec claude "/itc-base-setup"
-
-# Unreachable, but for clarity if exec somehow fails:
-step_fail "handoff" "failed to exec claude; run manually: cd $WORKSPACE_DIR && claude \"/itc-base-setup\""
-exit 1
+# Replace this shell with claude. Two stdin-related details matter here:
+#   1) Redirect stdin to /dev/tty — under `curl ... | bash`, bash's stdin
+#      is the script pipe. Without redirection claude would inherit it and
+#      consume the post-exec lines of install.sh as input (observed in T18).
+#   2) The trailing line of install.sh is this exec — nothing after — so
+#      even if a future edit forgets (1), there's no bash code left to leak.
+# Initial prompt as positional argument matches claude CLI 2.1.x convention.
+exec claude "/itc-base-setup" < /dev/tty
