@@ -223,5 +223,42 @@ fi
 info "Workspace dir: $WORKSPACE_DIR"
 step_done "dev-dir"
 
-echo "itc-bootstrap: workspace dir ready — remaining steps land in subsequent commits"
+# ─── [claude-trust] Pre-stage Claude trust config ──────────────────────────────
+
+step_start "claude-trust" "Pre-trusting workspace directory in Claude config"
+
+CLAUDE_CONFIG="$HOME/.claude.json"
+
+# If file doesn't exist, create it with just our trust entry
+if [[ ! -f "$CLAUDE_CONFIG" ]]; then
+  cat > "$CLAUDE_CONFIG" <<EOF
+{
+  "projects": {
+    "$WORKSPACE_DIR": {
+      "hasTrustDialogAccepted": true
+    }
+  }
+}
+EOF
+  chmod 600 "$CLAUDE_CONFIG"
+  step_done "claude-trust"
+else
+  # File exists — merge using jq (jq is in our base packages, installed in Task 5)
+  TMP=$(mktemp)
+  jq --arg path "$WORKSPACE_DIR" \
+     '.projects[$path] = ((.projects[$path] // {}) + {"hasTrustDialogAccepted": true})' \
+     "$CLAUDE_CONFIG" > "$TMP"
+  # Verify the merge produced valid JSON
+  if jq -e . "$TMP" >/dev/null 2>&1; then
+    mv "$TMP" "$CLAUDE_CONFIG"
+    chmod 600 "$CLAUDE_CONFIG"
+    step_done "claude-trust"
+  else
+    rm -f "$TMP"
+    step_fail "claude-trust" "merged config is invalid JSON; original ~/.claude.json untouched"
+    exit 1
+  fi
+fi
+
+echo "itc-bootstrap: Claude trust pre-staged — remaining steps land in subsequent commits"
 exit 0
