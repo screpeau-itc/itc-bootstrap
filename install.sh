@@ -405,9 +405,35 @@ if [[ "$INBOUND_SSH" == "y" ]]; then
   touch "$HOME/.ssh/authorized_keys"
   chmod 600 "$HOME/.ssh/authorized_keys"
 
-  # Fetch user's GitHub-registered pubkeys
-  KEYS_JSON=$(gh ssh-key list --json id,title,key 2>/dev/null || echo "[]")
-  KEY_COUNT=$(echo "$KEYS_JSON" | jq 'length')
+  # Helper: real SSH key fingerprint (handles option-prefixed authorized_keys lines).
+  # Returns empty on parse failure rather than crashing under set -e.
+  ssh_fingerprint() {
+    local key="$1"
+    ssh-keygen -lf - <<<"$key" 2>/dev/null | awk '{print $2}'
+  }
+
+  # Helper: is this fingerprint already in authorized_keys?
+  has_fingerprint() {
+    local fp="$1"
+    [[ -z "$fp" ]] && return 1
+    [[ -s "$HOME/.ssh/authorized_keys" ]] || return 1
+    ssh-keygen -lf "$HOME/.ssh/authorized_keys" 2>/dev/null \
+      | awk '{print $2}' | grep -qFx "$fp"
+  }
+
+  # Fetch user's GitHub-registered pubkeys. Separate transport failure from
+  # "user has no keys" so we don't silently mask scope/network issues.
+  KEYS_TMP=$(mktemp)
+  KEYS_JSON="[]"
+  if gh ssh-key list --json id,title,key > "$KEYS_TMP" 2>/dev/null; then
+    KEYS_JSON=$(<"$KEYS_TMP")
+  else
+    info "${C_YELLOW}Warning:${C_RESET} 'gh ssh-key list' failed."
+    info "Possible causes: missing scope, expired token, network down."
+    info "Run 'gh auth status' / 'gh auth refresh' and re-run this installer to add keys."
+  fi
+  rm -f "$KEYS_TMP"
+  KEY_COUNT=$(jq 'length' <<<"$KEYS_JSON")
 
   if [[ "$KEY_COUNT" -eq 0 ]]; then
     info "${C_YELLOW}No SSH keys found on your GitHub account.${C_RESET}"
@@ -415,13 +441,13 @@ if [[ "$INBOUND_SSH" == "y" ]]; then
   else
     echo
     info "Your GitHub-registered SSH public keys:"
-    echo "$KEYS_JSON" | jq -r 'to_entries[] | "\(.key + 1)) \(.value.title) (id \(.value.id))"'
+    jq -r 'to_entries[] | "\(.key + 1)) \(.value.title) (id \(.value.id))"' <<<"$KEYS_JSON"
     echo
     prompt "Enter numbers to install (space-separated, or 'all', or empty to skip): "
     read -r PICKS < /dev/tty
     case "$PICKS" in
       all|ALL)
-        SELECTED=$(echo "$KEYS_JSON" | jq -r '.[].key')
+        SELECTED=$(jq -r '.[].key' <<<"$KEYS_JSON")
         ;;
       "")
         SELECTED=""
@@ -429,8 +455,10 @@ if [[ "$INBOUND_SSH" == "y" ]]; then
       *)
         SELECTED=""
         for n in $PICKS; do
+          # Guard non-numeric input — `1 2 foo` shouldn't abort under set -e
+          [[ "$n" =~ ^[0-9]+$ ]] || { info "Skipping non-numeric input: '$n'"; continue; }
           IDX=$((n - 1))
-          K=$(echo "$KEYS_JSON" | jq -r ".[$IDX].key // empty")
+          K=$(jq -r ".[$IDX].key // empty" <<<"$KEYS_JSON")
           if [[ -n "$K" ]]; then
             SELECTED+="$K"$'\n'
           fi
@@ -442,9 +470,8 @@ if [[ "$INBOUND_SSH" == "y" ]]; then
       ADDED=0
       while IFS= read -r KEY; do
         [[ -z "$KEY" ]] && continue
-        # De-dupe by fingerprint
-        FP=$(echo "$KEY" | awk '{print $2}')
-        if grep -qF "$FP" "$HOME/.ssh/authorized_keys" 2>/dev/null; then
+        FP=$(ssh_fingerprint "$KEY")
+        if has_fingerprint "$FP"; then
           info "Skipping (already present): ${KEY:0:40}..."
         else
           echo "$KEY" >> "$HOME/.ssh/authorized_keys"
@@ -467,9 +494,11 @@ if [[ "$INBOUND_SSH" == "y" ]]; then
       if [[ -z "$OTHER_KEYS" ]]; then
         info "No public keys found for '$OTHER_USER' (or user does not exist)."
       else
+        # Subshell-around-while is fine here: only side effects are info echoes and
+        # appends to authorized_keys; no variable needs to escape the subshell.
         echo "$OTHER_KEYS" | while IFS= read -r K; do
-          FP=$(echo "$K" | awk '{print $2}')
-          if grep -qF "$FP" "$HOME/.ssh/authorized_keys" 2>/dev/null; then
+          FP=$(ssh_fingerprint "$K")
+          if has_fingerprint "$FP"; then
             info "Skipping (already present): ${K:0:40}..."
           else
             echo "$K $OTHER_USER@github" >> "$HOME/.ssh/authorized_keys"
@@ -480,8 +509,12 @@ if [[ "$INBOUND_SSH" == "y" ]]; then
     done
   fi
 
-  # Print reachable address
-  IP=$(ip -4 addr show eth0 2>/dev/null | awk '/inet / {print $2}' | cut -d/ -f1 || echo "")
+  # Print reachable address. Use `ip route get` to find the primary-egress
+  # interface's source IP — doesn't assume eth0 (which is WSL-specific;
+  # Docker/LXC/VM/native often use enp0s3 / ens4 / etc.).
+  IP=$(ip -4 route get 1.1.1.1 2>/dev/null \
+       | awk '{for(i=1;i<=NF;i++)if($i=="src")print $(i+1)}' \
+       | head -1)
   if [[ -n "$IP" ]]; then
     echo
     info "SSH server is listening on $IP"
