@@ -348,7 +348,9 @@ else
 fi
 
 # Check existing auth + scopes
-REQUIRED_SCOPES=("repo" "workflow" "read:org")
+#   - repo, workflow, read:org: core needs (clone, actions, org membership)
+#   - read:public_key: required by `gh ssh-key list` in the [ssh-in] step
+REQUIRED_SCOPES=("repo" "workflow" "read:org" "read:public_key")
 AUTH_OK="n"
 
 if gh auth status >/dev/null 2>&1; then
@@ -375,9 +377,9 @@ if [[ "$AUTH_OK" == "n" ]]; then
   echo
   if gh auth status >/dev/null 2>&1; then
     # Already authed, just need scope refresh
-    gh auth refresh -s "repo,workflow,read:org"
+    gh auth refresh -s "repo,workflow,read:org,read:public_key"
   else
-    gh auth login --scopes "repo,workflow,read:org" --hostname github.com --git-protocol https --web
+    gh auth login --scopes "repo,workflow,read:org,read:public_key" --hostname github.com --git-protocol https --web
   fi
   # Re-verify
   if ! gh auth status >/dev/null 2>&1; then
@@ -393,11 +395,22 @@ step_done "gh"
 if [[ "$INBOUND_SSH" == "y" ]]; then
   step_start "ssh-in" "Configuring inbound SSH"
 
-  # Install + enable sshd
+  # Install + enable sshd.
+  # On a fresh WSL distro the very first script run happens BEFORE 'wsl --shutdown'
+  # has picked up `[boot] systemd=true`, so systemd isn't PID 1 yet. Fall back to
+  # the legacy `service` command in that case; the systemctl-enable side effect
+  # (auto-start at boot) takes over once systemd actually runs.
   if ! dpkg -s openssh-server >/dev/null 2>&1; then
     sudo apt-get install -y openssh-server
   fi
-  sudo systemctl enable --now ssh
+  if pidof systemd >/dev/null 2>&1; then
+    sudo systemctl enable --now ssh
+  else
+    sudo systemctl enable ssh >/dev/null 2>&1 || true   # records the enable for next boot
+    sudo service ssh start >/dev/null 2>&1 || true
+    info "${C_YELLOW}systemd not yet running (pre-shutdown WSL session).${C_RESET}"
+    info "${C_YELLOW}sshd started via legacy 'service'; it will auto-start at boot after 'wsl --shutdown'.${C_RESET}"
+  fi
 
   # Prepare ~/.ssh
   mkdir -p "$HOME/.ssh"
