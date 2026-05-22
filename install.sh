@@ -288,49 +288,81 @@ info "Node: $(node --version), npm: $(npm --version)"
 
 step_start "claude-cli" "Installing Claude Code CLI"
 
-# Fast path: if claude is installed AND already authed, skip the install +
-# interactive auth pause entirely. Probe auth via `claude mcp list` which
-# requires a valid token (in 2.1.x there's no `claude auth status` command).
-if command -v claude >/dev/null 2>&1 && claude mcp list >/dev/null 2>&1; then
+# Fast path: skip install + interactive auth pause entirely IFF claude is
+# installed AT THE RIGHT LOCATION (~/.local/bin) AND already authed. Probe auth
+# via `claude mcp list` which requires a valid token (in 2.1.x there's no
+# `claude auth status` command). Claude at any other path (e.g. /usr/bin from
+# an old `sudo npm install -g`) drops into the install branch so we can
+# replace it with the native installer.
+if [[ "$(command -v claude 2>/dev/null)" == "$HOME/.local/bin/claude" ]] \
+   && claude mcp list >/dev/null 2>&1; then
   step_skip "claude-cli" "claude $(claude --version) already installed and authenticated"
 else
-  # Install if missing
-  if ! command -v claude >/dev/null 2>&1; then
-    sudo npm install -g @anthropic-ai/claude-code
-    if ! command -v claude >/dev/null 2>&1; then
-      step_fail "claude-cli" "npm install completed but 'claude' is not on PATH"
+  # Install or migrate to Anthropic's official native installer (NOT npm).
+  # Per Anthropic docs: do NOT use `sudo npm install -g` — it leaves the global
+  # modules dir root-owned and breaks claude's auto-update mechanism (the user
+  # sees "Auto-update failed · Try claude doctor or npm i -g …" on every run).
+  # The native installer drops claude in ~/.local/bin (user-owned) and
+  # self-updates work out of the box.
+  install_claude_native() {
+    curl -fsSL https://claude.ai/install.sh | bash
+    # The native installer adds ~/.local/bin to PATH via a shell-rc edit, but
+    # the current shell needs an explicit prepend to find the new binary.
+    export PATH="$HOME/.local/bin:$PATH"
+    hash -r
+    if [[ ! -x "$HOME/.local/bin/claude" ]]; then
+      step_fail "claude-cli" "native installer completed but '\$HOME/.local/bin/claude' is missing or not executable"
       exit 1
     fi
+  }
+
+  if ! command -v claude >/dev/null 2>&1; then
+    # Fresh install
+    install_claude_native
     info "Installed: $(claude --version)"
-  else
-    info "claude already installed: $(claude --version) — but not yet authenticated"
+  elif [[ "$(command -v claude)" != "$HOME/.local/bin/claude" ]]; then
+    # Wrong location (old `sudo npm install -g`) — migrate to native.
+    # Auth tokens live in ~/.claude.json (user-owned), so they survive this swap.
+    CLAUDE_PATH=$(command -v claude)
+    info "${C_YELLOW}claude is at $CLAUDE_PATH (not \$HOME/.local/bin/claude).${C_RESET}"
+    info "${C_YELLOW}This is usually an old 'sudo npm install -g' which breaks auto-update.${C_RESET}"
+    info "Removing the old install and re-installing via the native installer."
+    sudo npm uninstall -g @anthropic-ai/claude-code 2>/dev/null || true
+    install_claude_native
+    info "Re-installed via native installer: $(claude --version)"
   fi
 
-  echo
-  info "${C_BOLD}Claude Code first-run authentication${C_RESET}"
-  info "If not already authenticated, run this in another terminal NOW:"
-  info "  ${C_BLUE}claude${C_RESET}    (it will open a browser tab for Anthropic login)"
-  info "Once you see the welcome prompt in that other terminal, return here."
-  echo
+  # Whether we just installed or migrated, check auth before prompting.
+  # Auth state is preserved across the migration (~/.claude.json untouched).
+  if claude mcp list >/dev/null 2>&1; then
+    step_done "claude-cli"
+  else
+    echo
+    info "${C_BOLD}Claude Code first-run authentication${C_RESET}"
+    info "If not already authenticated, run this in another terminal NOW:"
+    info "  ${C_BLUE}claude${C_RESET}    (it will open a browser tab for Anthropic login)"
+    info "Once you see the welcome prompt in that other terminal, return here."
+    echo
 
-  AUTH_TRIES=0
-  while [[ $AUTH_TRIES -lt 3 ]]; do
-    AUTH_TRIES=$((AUTH_TRIES + 1))
-    ask_yes_no "Have you completed Claude Code authentication?" "y" CONFIRM
-    if [[ "$CONFIRM" == "y" ]]; then
-      if claude mcp list >/dev/null 2>&1; then
-        step_done "claude-cli"
-        break
-      else
-        info "${C_YELLOW}Claude CLI is not responding as authenticated. Try running 'claude' again to complete login.${C_RESET}"
+    AUTH_TRIES=0
+    while [[ $AUTH_TRIES -lt 3 ]]; do
+      AUTH_TRIES=$((AUTH_TRIES + 1))
+      ask_yes_no "Have you completed Claude Code authentication?" "y" CONFIRM
+      if [[ "$CONFIRM" == "y" ]]; then
+        if claude mcp list >/dev/null 2>&1; then
+          step_done "claude-cli"
+          break
+        else
+          info "${C_YELLOW}Claude CLI is not responding as authenticated. Try running 'claude' again to complete login.${C_RESET}"
+        fi
       fi
-    fi
-    if [[ $AUTH_TRIES -ge 3 ]]; then
-      step_fail "claude-cli" "auth not detected after 3 attempts"
-      info "Run 'claude' manually to complete auth, then re-run this installer to resume."
-      exit 1
-    fi
-  done
+      if [[ $AUTH_TRIES -ge 3 ]]; then
+        step_fail "claude-cli" "auth not detected after 3 attempts"
+        info "Run 'claude' manually to complete auth, then re-run this installer to resume."
+        exit 1
+      fi
+    done
+  fi
 fi
 
 # ─── [gh] GitHub CLI + auth ────────────────────────────────────────────────────
