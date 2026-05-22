@@ -284,5 +284,50 @@ fi
 
 info "Node: $(node --version), npm: $(npm --version)"
 
-echo "itc-bootstrap: Node installed — remaining steps land in subsequent commits"
+# ─── [claude-cli] Claude Code CLI ──────────────────────────────────────────────
+
+step_start "claude-cli" "Installing Claude Code CLI"
+
+if command -v claude >/dev/null 2>&1; then
+  info "claude already installed: $(claude --version)"
+else
+  sudo npm install -g @anthropic-ai/claude-code
+  if ! command -v claude >/dev/null 2>&1; then
+    step_fail "claude-cli" "npm install completed but 'claude' is not on PATH"
+    exit 1
+  fi
+  info "Installed: $(claude --version)"
+fi
+
+# Check auth status. claude provides no `claude auth status` command in 2.1.x,
+# so probe by running a no-op interactive command and inspecting output.
+# Simpler: just always pause for the user to confirm.
+echo
+info "${C_BOLD}Claude Code first-run authentication${C_RESET}"
+info "If not already authenticated, run this in another terminal NOW:"
+info "  ${C_BLUE}claude${C_RESET}    (it will open a browser tab for Anthropic login)"
+info "Once you see the welcome prompt in that other terminal, return here."
+echo
+
+AUTH_TRIES=0
+while [[ $AUTH_TRIES -lt 3 ]]; do
+  AUTH_TRIES=$((AUTH_TRIES + 1))
+  ask_yes_no "Have you completed Claude Code authentication?" "y" CONFIRM
+  if [[ "$CONFIRM" == "y" ]]; then
+    # Probe by attempting a no-op that requires auth: list MCPs
+    if claude mcp list >/dev/null 2>&1; then
+      step_done "claude-cli"
+      break
+    else
+      info "${C_YELLOW}Claude CLI is not responding as authenticated. Try running 'claude' again to complete login.${C_RESET}"
+    fi
+  fi
+  if [[ $AUTH_TRIES -ge 3 ]]; then
+    step_fail "claude-cli" "auth not detected after 3 attempts"
+    info "Run 'claude' manually to complete auth, then re-run this installer to resume."
+    exit 1
+  fi
+done
+
+echo "itc-bootstrap: Claude CLI installed and authenticated — remaining steps in subsequent commits"
 exit 0
