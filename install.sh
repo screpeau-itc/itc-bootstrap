@@ -434,14 +434,17 @@ if [[ "$INBOUND_SSH" == "y" ]]; then
       | awk '{print $2}' | grep -qFx "$fp"
   }
 
-  # Fetch user's GitHub-registered pubkeys. Separate transport failure from
-  # "user has no keys" so we don't silently mask scope/network issues.
+  # Fetch user's GitHub-registered pubkeys via the raw API endpoint.
+  # We avoid `gh ssh-key list` because in recent gh versions it ALSO probes
+  # /user/ssh_signing_keys (signing keys) which requires admin:ssh_signing_key
+  # scope — its 404 makes gh exit non-zero, masking the auth-keys we DO have.
+  # `gh api user/keys` is the focused single call (needs only read:public_key).
   KEYS_TMP=$(mktemp)
   KEYS_JSON="[]"
-  if gh ssh-key list --json id,title,key > "$KEYS_TMP" 2>/dev/null; then
+  if gh api user/keys > "$KEYS_TMP" 2>/dev/null; then
     KEYS_JSON=$(<"$KEYS_TMP")
   else
-    info "${C_YELLOW}Warning:${C_RESET} 'gh ssh-key list' failed."
+    info "${C_YELLOW}Warning:${C_RESET} 'gh api user/keys' failed."
     info "Possible causes: missing scope, expired token, network down."
     info "Run 'gh auth status' / 'gh auth refresh' and re-run this installer to add keys."
   fi
