@@ -556,5 +556,35 @@ fi
 
 step_done "marketplace"
 
-echo "itc-bootstrap: marketplace + plugin handled — hand-off in next commit"
-exit 0
+# ─── [handoff] Hand off to Claude session ──────────────────────────────────────
+
+step_start "handoff" "Handing off to Claude session"
+
+echo
+info "${C_GREEN}${C_BOLD}═══════════════════════════════════════════════════════${C_RESET}"
+info "${C_GREEN}${C_BOLD}  itc-bootstrap layer-1 complete.${C_RESET}"
+info "${C_GREEN}${C_BOLD}═══════════════════════════════════════════════════════${C_RESET}"
+echo
+info "Workspace: $WORKSPACE_DIR"
+info "Marketplace: itc-claude-marketplace (registered)"
+info "Plugin: itc-base (installed if available)"
+echo
+
+if [[ "$ENV_TYPE" == "wsl" ]]; then
+  info "${C_YELLOW}WSL: run 'wsl --shutdown' from PowerShell to pick up /etc/wsl.conf changes.${C_RESET}"
+  echo
+fi
+
+info "Launching Claude session in your workspace..."
+sleep 2
+
+cd "$WORKSPACE_DIR"
+# Use `exec` to replace this shell with claude. Initial prompt as positional argument
+# matches claude CLI 2.1.x convention. If your installed CLI uses different syntax,
+# the worst case is claude starts without the initial prompt — the user can manually
+# type /itc-base-setup at the first turn.
+exec claude "/itc-base-setup"
+
+# Unreachable, but for clarity if exec somehow fails:
+step_fail "handoff" "failed to exec claude; run manually: cd $WORKSPACE_DIR && claude \"/itc-base-setup\""
+exit 1
