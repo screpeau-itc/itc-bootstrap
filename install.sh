@@ -288,88 +288,103 @@ info "Node: $(node --version), npm: $(npm --version)"
 
 step_start "claude-cli" "Installing Claude Code CLI"
 
-if command -v claude >/dev/null 2>&1; then
-  info "claude already installed: $(claude --version)"
+# Fast path: if claude is installed AND already authed, skip the install +
+# interactive auth pause entirely. Probe auth via `claude mcp list` which
+# requires a valid token (in 2.1.x there's no `claude auth status` command).
+if command -v claude >/dev/null 2>&1 && claude mcp list >/dev/null 2>&1; then
+  step_skip "claude-cli" "claude $(claude --version) already installed and authenticated"
 else
-  sudo npm install -g @anthropic-ai/claude-code
+  # Install if missing
   if ! command -v claude >/dev/null 2>&1; then
-    step_fail "claude-cli" "npm install completed but 'claude' is not on PATH"
-    exit 1
-  fi
-  info "Installed: $(claude --version)"
-fi
-
-# Check auth status. claude provides no `claude auth status` command in 2.1.x,
-# so probe by running a no-op interactive command and inspecting output.
-# Simpler: just always pause for the user to confirm.
-echo
-info "${C_BOLD}Claude Code first-run authentication${C_RESET}"
-info "If not already authenticated, run this in another terminal NOW:"
-info "  ${C_BLUE}claude${C_RESET}    (it will open a browser tab for Anthropic login)"
-info "Once you see the welcome prompt in that other terminal, return here."
-echo
-
-AUTH_TRIES=0
-while [[ $AUTH_TRIES -lt 3 ]]; do
-  AUTH_TRIES=$((AUTH_TRIES + 1))
-  ask_yes_no "Have you completed Claude Code authentication?" "y" CONFIRM
-  if [[ "$CONFIRM" == "y" ]]; then
-    # Probe by attempting a no-op that requires auth: list MCPs
-    if claude mcp list >/dev/null 2>&1; then
-      step_done "claude-cli"
-      break
-    else
-      info "${C_YELLOW}Claude CLI is not responding as authenticated. Try running 'claude' again to complete login.${C_RESET}"
+    sudo npm install -g @anthropic-ai/claude-code
+    if ! command -v claude >/dev/null 2>&1; then
+      step_fail "claude-cli" "npm install completed but 'claude' is not on PATH"
+      exit 1
     fi
+    info "Installed: $(claude --version)"
+  else
+    info "claude already installed: $(claude --version) — but not yet authenticated"
   fi
-  if [[ $AUTH_TRIES -ge 3 ]]; then
-    step_fail "claude-cli" "auth not detected after 3 attempts"
-    info "Run 'claude' manually to complete auth, then re-run this installer to resume."
-    exit 1
-  fi
-done
+
+  echo
+  info "${C_BOLD}Claude Code first-run authentication${C_RESET}"
+  info "If not already authenticated, run this in another terminal NOW:"
+  info "  ${C_BLUE}claude${C_RESET}    (it will open a browser tab for Anthropic login)"
+  info "Once you see the welcome prompt in that other terminal, return here."
+  echo
+
+  AUTH_TRIES=0
+  while [[ $AUTH_TRIES -lt 3 ]]; do
+    AUTH_TRIES=$((AUTH_TRIES + 1))
+    ask_yes_no "Have you completed Claude Code authentication?" "y" CONFIRM
+    if [[ "$CONFIRM" == "y" ]]; then
+      if claude mcp list >/dev/null 2>&1; then
+        step_done "claude-cli"
+        break
+      else
+        info "${C_YELLOW}Claude CLI is not responding as authenticated. Try running 'claude' again to complete login.${C_RESET}"
+      fi
+    fi
+    if [[ $AUTH_TRIES -ge 3 ]]; then
+      step_fail "claude-cli" "auth not detected after 3 attempts"
+      info "Run 'claude' manually to complete auth, then re-run this installer to resume."
+      exit 1
+    fi
+  done
+fi
 
 # ─── [gh] GitHub CLI + auth ────────────────────────────────────────────────────
 
 step_start "gh" "Installing GitHub CLI and authenticating"
 
-# Install gh from official apt repo if not present
-if ! command -v gh >/dev/null 2>&1; then
-  curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
-    | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
-  sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
-  echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
-    | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
-  sudo apt-get update -qq
-  sudo apt-get install -y gh
-  info "Installed: $(gh --version | head -1)"
-else
-  info "gh already installed: $(gh --version | head -1)"
-fi
-
-# Check existing auth + scopes
+# Required scopes:
 #   - repo, workflow, read:org: core needs (clone, actions, org membership)
-#   - read:public_key: required by `gh ssh-key list` in the [ssh-in] step
+#   - read:public_key: required by /user/keys in the [ssh-in] step
 REQUIRED_SCOPES=("repo" "workflow" "read:org" "read:public_key")
-AUTH_OK="n"
 
-if gh auth status >/dev/null 2>&1; then
-  CURRENT_SCOPES=$(gh auth status 2>&1 | grep -oE "'[a-z:]+'" | tr -d "'" || true)
-  MISSING=()
+# Predicate: gh is installed AND authed AND all required scopes are present.
+gh_is_ready() {
+  command -v gh >/dev/null 2>&1 || return 1
+  gh auth status >/dev/null 2>&1 || return 1
+  local current_scopes scope
+  current_scopes=$(gh auth status 2>&1 | grep -oE "'[a-z:]+'" | tr -d "'" || true)
   for scope in "${REQUIRED_SCOPES[@]}"; do
-    if ! grep -qw "$scope" <<< "$CURRENT_SCOPES"; then
-      MISSING+=("$scope")
-    fi
+    grep -qw "$scope" <<< "$current_scopes" || return 1
   done
-  if [[ ${#MISSING[@]} -eq 0 ]]; then
-    AUTH_OK="y"
-    info "gh already authenticated with required scopes"
-  else
-    info "gh auth missing scopes: ${MISSING[*]}; will refresh"
-  fi
-fi
+  return 0
+}
 
-if [[ "$AUTH_OK" == "n" ]]; then
+# Fast path: if gh is installed AND already authed with the required scopes,
+# skip install + auth entirely.
+if gh_is_ready; then
+  step_skip "gh" "gh $(gh --version | head -1 | awk '{print $3}') already installed and authenticated with required scopes"
+else
+  # Install gh from official apt repo if not present
+  if ! command -v gh >/dev/null 2>&1; then
+    curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+      | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+    sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+      | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+    sudo apt-get update -qq
+    sudo apt-get install -y gh
+    info "Installed: $(gh --version | head -1)"
+  else
+    info "gh already installed: $(gh --version | head -1)"
+  fi
+
+  # Report which scopes are missing (informational)
+  if gh auth status >/dev/null 2>&1; then
+    CURRENT_SCOPES=$(gh auth status 2>&1 | grep -oE "'[a-z:]+'" | tr -d "'" || true)
+    MISSING=()
+    for scope in "${REQUIRED_SCOPES[@]}"; do
+      grep -qw "$scope" <<< "$CURRENT_SCOPES" || MISSING+=("$scope")
+    done
+    if [[ ${#MISSING[@]} -gt 0 ]]; then
+      info "gh auth missing scopes: ${MISSING[*]}; will refresh"
+    fi
+  fi
+
   echo
   info "${C_BOLD}GitHub authentication${C_RESET}"
   info "This will open a browser tab and ask you to paste a one-time code."
@@ -386,9 +401,8 @@ if [[ "$AUTH_OK" == "n" ]]; then
     step_fail "gh" "authentication did not complete"
     exit 1
   fi
+  step_done "gh"
 fi
-
-step_done "gh"
 
 # ─── [ssh-in] Inbound SSH ──────────────────────────────────────────────────────
 
