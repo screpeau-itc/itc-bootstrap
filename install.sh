@@ -45,12 +45,14 @@ detect_distro() {
 }
 
 detect_env() {
+  local virt
   if grep -qiE 'microsoft|wsl' /proc/version 2>/dev/null; then
     echo "wsl"
-  elif [[ -f /.dockerenv ]] || grep -q docker /proc/1/cgroup 2>/dev/null; then
+  elif [[ -f /.dockerenv ]] || grep -qE '(^|[/.-])docker([/.-]|$)' /proc/1/cgroup 2>/dev/null; then
     echo "docker"
-  elif grep -q lxc /proc/1/cgroup 2>/dev/null \
-       || [[ "$(systemd-detect-virt --container 2>/dev/null)" == "lxc" ]]; then
+  elif grep -qE '(^|[/.-])lxc([/.-]|$)' /proc/1/cgroup 2>/dev/null \
+       || { command -v systemd-detect-virt >/dev/null 2>&1 \
+            && [[ "$(systemd-detect-virt --container 2>/dev/null)" == "lxc" ]]; }; then
     echo "lxc"
   elif command -v systemd-detect-virt >/dev/null 2>&1; then
     virt=$(systemd-detect-virt 2>/dev/null || echo "none")
