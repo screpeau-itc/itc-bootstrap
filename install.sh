@@ -260,5 +260,29 @@ else
   fi
 fi
 
-echo "itc-bootstrap: Claude trust pre-staged — remaining steps land in subsequent commits"
+# ─── [node] Node LTS ───────────────────────────────────────────────────────────
+
+step_start "node" "Installing Node.js LTS"
+
+NEEDED_NODE_MAJOR=20  # Current LTS major as of 2026-05; bump if NodeSource defaults change
+
+if command -v node >/dev/null 2>&1; then
+  CURRENT_MAJOR=$(node -p "process.versions.node.split('.')[0]" 2>/dev/null || echo "0")
+  if [[ "$CURRENT_MAJOR" -ge "$NEEDED_NODE_MAJOR" ]]; then
+    step_skip "node" "node $(node --version) already installed (>= v${NEEDED_NODE_MAJOR})"
+  else
+    info "Node v${CURRENT_MAJOR} installed but older than required v${NEEDED_NODE_MAJOR}; upgrading"
+    curl -fsSL "https://deb.nodesource.com/setup_lts.x" | sudo -E bash -
+    sudo apt-get install -y nodejs
+    step_done "node"
+  fi
+else
+  curl -fsSL "https://deb.nodesource.com/setup_lts.x" | sudo -E bash -
+  sudo apt-get install -y nodejs
+  step_done "node"
+fi
+
+info "Node: $(node --version), npm: $(npm --version)"
+
+echo "itc-bootstrap: Node installed — remaining steps land in subsequent commits"
 exit 0
