@@ -329,5 +329,64 @@ while [[ $AUTH_TRIES -lt 3 ]]; do
   fi
 done
 
-echo "itc-bootstrap: Claude CLI installed and authenticated — remaining steps in subsequent commits"
+# ─── [gh] GitHub CLI + auth ────────────────────────────────────────────────────
+
+step_start "gh" "Installing GitHub CLI and authenticating"
+
+# Install gh from official apt repo if not present
+if ! command -v gh >/dev/null 2>&1; then
+  curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+    | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+  sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
+  echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+    | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+  sudo apt-get update -qq
+  sudo apt-get install -y gh
+  info "Installed: $(gh --version | head -1)"
+else
+  info "gh already installed: $(gh --version | head -1)"
+fi
+
+# Check existing auth + scopes
+REQUIRED_SCOPES=("repo" "workflow" "read:org")
+AUTH_OK="n"
+
+if gh auth status >/dev/null 2>&1; then
+  CURRENT_SCOPES=$(gh auth status 2>&1 | grep -oE "'[a-z:]+'" | tr -d "'" || true)
+  MISSING=()
+  for scope in "${REQUIRED_SCOPES[@]}"; do
+    if ! grep -qw "$scope" <<< "$CURRENT_SCOPES"; then
+      MISSING+=("$scope")
+    fi
+  done
+  if [[ ${#MISSING[@]} -eq 0 ]]; then
+    AUTH_OK="y"
+    info "gh already authenticated with required scopes"
+  else
+    info "gh auth missing scopes: ${MISSING[*]}; will refresh"
+  fi
+fi
+
+if [[ "$AUTH_OK" == "n" ]]; then
+  echo
+  info "${C_BOLD}GitHub authentication${C_RESET}"
+  info "This will open a browser tab and ask you to paste a one-time code."
+  info "Choose: GitHub.com / HTTPS / Login with browser."
+  echo
+  if gh auth status >/dev/null 2>&1; then
+    # Already authed, just need scope refresh
+    gh auth refresh -s "repo,workflow,read:org"
+  else
+    gh auth login --scopes "repo,workflow,read:org" --hostname github.com --git-protocol https --web
+  fi
+  # Re-verify
+  if ! gh auth status >/dev/null 2>&1; then
+    step_fail "gh" "authentication did not complete"
+    exit 1
+  fi
+fi
+
+step_done "gh"
+
+echo "itc-bootstrap: gh installed and authed — remaining steps in subsequent commits"
 exit 0
