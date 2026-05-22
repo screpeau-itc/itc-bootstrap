@@ -377,7 +377,7 @@ if [[ "$AUTH_OK" == "n" ]]; then
   echo
   if gh auth status >/dev/null 2>&1; then
     # Already authed, just need scope refresh
-    gh auth refresh -s "repo,workflow,read:org,read:public_key"
+    gh auth refresh --hostname github.com -s "repo,workflow,read:org,read:public_key"
   else
     gh auth login --scopes "repo,workflow,read:org,read:public_key" --hostname github.com --git-protocol https --web
   fi
