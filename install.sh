@@ -89,5 +89,68 @@ case "$ENV_TYPE" in
   *)                  DEFAULT_INBOUND_SSH="n" ;;
 esac
 
-echo "itc-bootstrap: detection complete — full implementation in subsequent commits"
+# ─── Front-loaded prompts ──────────────────────────────────────────────────────
+
+# Verify we have an interactive tty for the prompts that follow.
+# Under `curl ... | bash`, stdin is the script pipe — `read` would consume
+# the script itself. We force reads from /dev/tty instead.
+if [[ ! -e /dev/tty ]]; then
+  step_fail "preflight" "interactive installer requires a TTY (/dev/tty missing); run from a real terminal"
+  exit 1
+fi
+
+# Read with default. Args: prompt-text, default-value, var-name.
+ask_with_default() {
+  local p="$1" def="$2" var="$3" reply
+  prompt "$p [default: $def]: "
+  read -r reply < /dev/tty
+  if [[ -z "$reply" ]]; then
+    printf -v "$var" '%s' "$def"
+  else
+    printf -v "$var" '%s' "$reply"
+  fi
+}
+
+# Yes/No with default. Args: prompt-text, default ("y" or "n"), var-name (set to "y" or "n").
+ask_yes_no() {
+  local p="$1" def="$2" var="$3" reply hint
+  case "$def" in
+    y) hint="[Y/n]" ;;
+    n) hint="[y/N]" ;;
+    *) hint="[y/n]" ;;
+  esac
+  while true; do
+    prompt "$p $hint: "
+    read -r reply < /dev/tty
+    reply="${reply:-$def}"
+    case "${reply,,}" in
+      y|yes) printf -v "$var" 'y'; return ;;
+      n|no)  printf -v "$var" 'n'; return ;;
+      *) info "Please answer y or n." ;;
+    esac
+  done
+}
+
+echo
+info "${C_BOLD}A few quick questions, then the installer runs uninterrupted until it needs interactive auth.${C_RESET}"
+echo
+
+ask_with_default "Workspace folder name (under ~/dev)" "itx-default-code" WORKSPACE_NAME
+ask_yes_no       "Enable inbound SSH on this host (so you can SSH in from another machine)?" \
+                 "$DEFAULT_INBOUND_SSH" INBOUND_SSH
+
+# Folder name sanity: no slashes, no leading dot, non-empty
+if [[ -z "$WORKSPACE_NAME" || "$WORKSPACE_NAME" == .* || "$WORKSPACE_NAME" == */* ]]; then
+  step_fail "prompts" "invalid workspace name '$WORKSPACE_NAME' (must be non-empty, no slashes, no leading dot)"
+  exit 1
+fi
+
+WORKSPACE_DIR="$HOME/dev/$WORKSPACE_NAME"
+
+echo
+info "Will use workspace: $WORKSPACE_DIR"
+info "Inbound SSH:        $([[ "$INBOUND_SSH" == "y" ]] && echo "enabled" || echo "disabled")"
+echo
+
+echo "itc-bootstrap: prompts complete — install steps land in subsequent commits"
 exit 0
