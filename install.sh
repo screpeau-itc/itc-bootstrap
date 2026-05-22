@@ -347,7 +347,7 @@ gh_is_ready() {
   command -v gh >/dev/null 2>&1 || return 1
   gh auth status >/dev/null 2>&1 || return 1
   local current_scopes scope
-  current_scopes=$(gh auth status 2>&1 | grep -oE "'[a-z:]+'" | tr -d "'" || true)
+  current_scopes=$(gh auth status 2>&1 | grep -oE "'[a-z:_]+'" | tr -d "'" || true)
   for scope in "${REQUIRED_SCOPES[@]}"; do
     grep -qw "$scope" <<< "$current_scopes" || return 1
   done
@@ -375,7 +375,7 @@ else
 
   # Report which scopes are missing (informational)
   if gh auth status >/dev/null 2>&1; then
-    CURRENT_SCOPES=$(gh auth status 2>&1 | grep -oE "'[a-z:]+'" | tr -d "'" || true)
+    CURRENT_SCOPES=$(gh auth status 2>&1 | grep -oE "'[a-z:_]+'" | tr -d "'" || true)
     MISSING=()
     for scope in "${REQUIRED_SCOPES[@]}"; do
       grep -qw "$scope" <<< "$CURRENT_SCOPES" || MISSING+=("$scope")
