@@ -26,7 +26,7 @@ The installer asks two questions upfront, then runs uninterrupted until it pause
 1. **Detects** distro (Ubuntu/Debian only — bails on others with manual-mode pointer) and environment (WSL, Docker, LXC, VM, native).
 2. **Asks** two quick questions: workspace folder name (default `itx-default-code`), enable inbound SSH (default Yes on WSL/Docker/LXC/VM, No on native).
 3. **Installs base packages**: `build-essential git ca-certificates gnupg lsb-release jq tmux unzip`.
-4. **Writes `/etc/wsl.conf`** (WSL only): enables systemd, sets default user, disables `/mnt/c` auto-mount, disables Windows PATH inheritance.
+4. **Writes `/etc/wsl.conf`** (WSL only): enables systemd, sets default user, mounts `/mnt/c` **read-only** (Windows files visible but not writable from WSL), disables Windows PATH inheritance.
 5. **Creates the workspace directory** under `~/dev/<chosen-name>`.
 6. **Pre-stages Claude Code's trust config** so the workspace doesn't trigger the "Do you trust this directory?" prompt on first run.
 7. **Installs Node LTS** via NodeSource.
@@ -73,7 +73,7 @@ default=screpeau
 appendWindowsPath=false
 
 [automount]
-enabled=false
+options="ro"
 EOF
 # From PowerShell on the Windows host:
 #   wsl --shutdown

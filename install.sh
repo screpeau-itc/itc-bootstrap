@@ -190,7 +190,7 @@ default=screpeau
 appendWindowsPath=false
 
 [automount]
-enabled=false
+options="ro"
 EOF
 )
 
