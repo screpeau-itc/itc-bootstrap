@@ -160,5 +160,19 @@ info "Will use workspace: $WORKSPACE_DIR"
 info "Inbound SSH:        $([[ "$INBOUND_SSH" == "y" ]] && echo "enabled" || echo "disabled")"
 echo
 
-echo "itc-bootstrap: prompts complete — install steps land in subsequent commits"
+# ─── [base-pkgs] Base packages ─────────────────────────────────────────────────
+
+step_start "base-pkgs" "Installing base packages"
+
+BASE_PACKAGES=(build-essential git ca-certificates gnupg lsb-release jq tmux unzip)
+
+# Update apt index (quietly, but show errors)
+sudo apt-get update -qq
+
+# Install all in one apt invocation (handles already-installed automatically)
+sudo apt-get install -y "${BASE_PACKAGES[@]}"
+
+step_done "base-pkgs"
+
+echo "itc-bootstrap: base packages installed — remaining steps land in subsequent commits"
 exit 0
