@@ -388,5 +388,111 @@ fi
 
 step_done "gh"
 
-echo "itc-bootstrap: gh installed and authed — remaining steps in subsequent commits"
+# ─── [ssh-in] Inbound SSH ──────────────────────────────────────────────────────
+
+if [[ "$INBOUND_SSH" == "y" ]]; then
+  step_start "ssh-in" "Configuring inbound SSH"
+
+  # Install + enable sshd
+  if ! dpkg -s openssh-server >/dev/null 2>&1; then
+    sudo apt-get install -y openssh-server
+  fi
+  sudo systemctl enable --now ssh
+
+  # Prepare ~/.ssh
+  mkdir -p "$HOME/.ssh"
+  chmod 700 "$HOME/.ssh"
+  touch "$HOME/.ssh/authorized_keys"
+  chmod 600 "$HOME/.ssh/authorized_keys"
+
+  # Fetch user's GitHub-registered pubkeys
+  KEYS_JSON=$(gh ssh-key list --json id,title,key 2>/dev/null || echo "[]")
+  KEY_COUNT=$(echo "$KEYS_JSON" | jq 'length')
+
+  if [[ "$KEY_COUNT" -eq 0 ]]; then
+    info "${C_YELLOW}No SSH keys found on your GitHub account.${C_RESET}"
+    info "Skipping authorized_keys setup. Use 'gh ssh-key add' to register a key later."
+  else
+    echo
+    info "Your GitHub-registered SSH public keys:"
+    echo "$KEYS_JSON" | jq -r 'to_entries[] | "\(.key + 1)) \(.value.title) (id \(.value.id))"'
+    echo
+    prompt "Enter numbers to install (space-separated, or 'all', or empty to skip): "
+    read -r PICKS < /dev/tty
+    case "$PICKS" in
+      all|ALL)
+        SELECTED=$(echo "$KEYS_JSON" | jq -r '.[].key')
+        ;;
+      "")
+        SELECTED=""
+        ;;
+      *)
+        SELECTED=""
+        for n in $PICKS; do
+          IDX=$((n - 1))
+          K=$(echo "$KEYS_JSON" | jq -r ".[$IDX].key // empty")
+          if [[ -n "$K" ]]; then
+            SELECTED+="$K"$'\n'
+          fi
+        done
+        ;;
+    esac
+
+    if [[ -n "$SELECTED" ]]; then
+      ADDED=0
+      while IFS= read -r KEY; do
+        [[ -z "$KEY" ]] && continue
+        # De-dupe by fingerprint
+        FP=$(echo "$KEY" | awk '{print $2}')
+        if grep -qF "$FP" "$HOME/.ssh/authorized_keys" 2>/dev/null; then
+          info "Skipping (already present): ${KEY:0:40}..."
+        else
+          echo "$KEY" >> "$HOME/.ssh/authorized_keys"
+          ADDED=$((ADDED + 1))
+        fi
+      done <<< "$SELECTED"
+      info "Added $ADDED key(s) to ~/.ssh/authorized_keys"
+    fi
+  fi
+
+  # Optional: add another GitHub user's pubkeys
+  echo
+  ask_yes_no "Add another GitHub user's public keys (e.g., for a teammate)?" "n" ADD_OTHER
+  if [[ "$ADD_OTHER" == "y" ]]; then
+    while true; do
+      prompt "GitHub username (empty to stop): "
+      read -r OTHER_USER < /dev/tty
+      [[ -z "$OTHER_USER" ]] && break
+      OTHER_KEYS=$(gh api "users/$OTHER_USER/keys" --jq '.[].key' 2>/dev/null || echo "")
+      if [[ -z "$OTHER_KEYS" ]]; then
+        info "No public keys found for '$OTHER_USER' (or user does not exist)."
+      else
+        echo "$OTHER_KEYS" | while IFS= read -r K; do
+          FP=$(echo "$K" | awk '{print $2}')
+          if grep -qF "$FP" "$HOME/.ssh/authorized_keys" 2>/dev/null; then
+            info "Skipping (already present): ${K:0:40}..."
+          else
+            echo "$K $OTHER_USER@github" >> "$HOME/.ssh/authorized_keys"
+            info "Added: ${K:0:40}..."
+          fi
+        done
+      fi
+    done
+  fi
+
+  # Print reachable address
+  IP=$(ip -4 addr show eth0 2>/dev/null | awk '/inet / {print $2}' | cut -d/ -f1 || echo "")
+  if [[ -n "$IP" ]]; then
+    echo
+    info "SSH server is listening on $IP"
+    if [[ "$ENV_TYPE" == "wsl" ]]; then
+      info "${C_YELLOW}WSL caveat: this IP is reachable from your Windows host only.${C_RESET}"
+      info "${C_YELLOW}It is ephemeral (rerolls on 'wsl --shutdown'). External access requires netsh portproxy (not recommended).${C_RESET}"
+    fi
+  fi
+
+  step_done "ssh-in"
+fi
+
+echo "itc-bootstrap: inbound SSH handled — final steps in subsequent commits"
 exit 0
