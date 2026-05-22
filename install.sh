@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # itc-bootstrap — cold-start installer for Claude Code on Ubuntu/WSL
 # See README.md for usage. Designed to be invoked via:
-#   curl -fsSL https://raw.githubusercontent.com/screpeau-itc/itc-bootstrap/main/install.sh | bash
+#   curl -fsSL "https://raw.githubusercontent.com/screpeau-itc/itc-bootstrap/main/install.sh?v=$(date +%s)" | bash
 #
 # Source: https://github.com/screpeau-itc/itc-bootstrap
 # License: MIT (see LICENSE)
@@ -342,14 +342,28 @@ step_start "gh" "Installing GitHub CLI and authenticating"
 #   - read:public_key: required by /user/keys in the [ssh-in] step
 REQUIRED_SCOPES=("repo" "workflow" "read:org" "read:public_key")
 
+# Helper: list current token scopes, one per line.
+# Reads X-Oauth-Scopes from an authenticated API response — robust to any
+# future format drift in `gh auth status` human output (which has caught us
+# twice now: scopes with ':' and scopes with '_').
+gh_current_scopes() {
+  gh api -i /user 2>/dev/null \
+    | tr -d '\r' \
+    | sed -n 's/^[Xx]-[Oo][Aa]uth-[Ss]copes:[[:space:]]*//p' \
+    | tr ',' '\n' \
+    | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' \
+    | grep -v '^$' || true
+}
+
 # Predicate: gh is installed AND authed AND all required scopes are present.
 gh_is_ready() {
   command -v gh >/dev/null 2>&1 || return 1
   gh auth status >/dev/null 2>&1 || return 1
   local current_scopes scope
-  current_scopes=$(gh auth status 2>&1 | grep -oE "'[a-z:_]+'" | tr -d "'" || true)
+  current_scopes=$(gh_current_scopes)
+  [[ -n "$current_scopes" ]] || return 1
   for scope in "${REQUIRED_SCOPES[@]}"; do
-    grep -qw "$scope" <<< "$current_scopes" || return 1
+    grep -Fxq "$scope" <<< "$current_scopes" || return 1
   done
   return 0
 }
@@ -375,10 +389,10 @@ else
 
   # Report which scopes are missing (informational)
   if gh auth status >/dev/null 2>&1; then
-    CURRENT_SCOPES=$(gh auth status 2>&1 | grep -oE "'[a-z:_]+'" | tr -d "'" || true)
+    CURRENT_SCOPES=$(gh_current_scopes)
     MISSING=()
     for scope in "${REQUIRED_SCOPES[@]}"; do
-      grep -qw "$scope" <<< "$CURRENT_SCOPES" || MISSING+=("$scope")
+      grep -Fxq "$scope" <<< "$CURRENT_SCOPES" || MISSING+=("$scope")
     done
     if [[ ${#MISSING[@]} -gt 0 ]]; then
       info "gh auth missing scopes: ${MISSING[*]}; will refresh"

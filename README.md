@@ -16,7 +16,7 @@ On a freshly-installed Ubuntu/Debian (or WSL distro), paste this into your termi
 ```bash
 sudo apt update && sudo apt upgrade -y
 sudo apt install -y curl
-curl -fsSL https://raw.githubusercontent.com/screpeau-itc/itc-bootstrap/main/install.sh | bash
+curl -fsSL "https://raw.githubusercontent.com/screpeau-itc/itc-bootstrap/main/install.sh?v=$(date +%s)" | bash
 ```
 
 The installer asks two questions upfront, then runs uninterrupted until it pauses for Claude Code's browser authentication and GitHub's browser authentication. Plan ~15–20 minutes for the full run.
