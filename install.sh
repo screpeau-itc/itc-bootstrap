@@ -210,5 +210,18 @@ else
   : # not WSL, skip silently
 fi
 
-echo "itc-bootstrap: WSL overlay handled — remaining steps land in subsequent commits"
+# ─── [dev-dir] Workspace directory ─────────────────────────────────────────────
+
+step_start "dev-dir" "Creating workspace directory"
+
+mkdir -p "$WORKSPACE_DIR"
+# Defensive: if for any reason ownership is wrong (e.g., script run partially as root in past), fix it
+if [[ "$(stat -c '%U' "$WORKSPACE_DIR")" != "$USER" ]]; then
+  sudo chown -R "$USER:$USER" "$HOME/dev" "$WORKSPACE_DIR"
+fi
+
+info "Workspace dir: $WORKSPACE_DIR"
+step_done "dev-dir"
+
+echo "itc-bootstrap: workspace dir ready — remaining steps land in subsequent commits"
 exit 0
