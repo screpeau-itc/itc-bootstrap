@@ -27,6 +27,14 @@ prompt()     { printf '%s? %s%s ' "$C_BOLD" "$1" "$C_RESET"; }
 
 # ─── Safety pre-flight ─────────────────────────────────────────────────────────
 
+# Bash 4+ required (we use ${var,,} lowercasing, associative arrays, etc.).
+# Target distros (Ubuntu/Debian) always ship bash 5+; this guard is for
+# anyone who pastes the recipe on macOS (bash 3.2) or a stripped container.
+if (( BASH_VERSINFO[0] < 4 )); then
+  printf 'itc-bootstrap: requires bash 4 or newer (detected bash %s)\n' "$BASH_VERSION" >&2
+  exit 1
+fi
+
 if [[ $EUID -eq 0 ]]; then
   step_fail "preflight" "do not run this script as root; run as your normal user (the script sudos the steps that need elevation)"
   exit 1
