@@ -5,7 +5,7 @@ Cold-start installer that takes a bare Ubuntu/Debian (including a fresh WSL dist
 After this installer finishes, you have:
 - A `~/dev/<workspace-name>` folder pre-trusted in Claude Code's config
 - Claude CLI installed and authenticated to your Anthropic account
-- GitHub CLI installed and authenticated with scopes `repo,workflow,read:org`
+- GitHub CLI installed and authenticated with scopes `repo,workflow,read:org,read:public_key`
 - (Optional) An SSH server with your GitHub-registered public keys in `authorized_keys`
 - A Claude Code session opened in the workspace, ready to invoke `/itc-base-setup` for the layer-2 setup
 
@@ -31,7 +31,7 @@ The installer asks two questions upfront, then runs uninterrupted until it pause
 6. **Pre-stages Claude Code's trust config** so the workspace doesn't trigger the "Do you trust this directory?" prompt on first run.
 7. **Installs Node LTS** via NodeSource.
 8. **Installs Claude Code CLI** (`npm install -g @anthropic-ai/claude-code`) and pauses for browser auth.
-9. **Installs GitHub CLI** and runs `gh auth login --scopes repo,workflow,read:org`.
+9. **Installs GitHub CLI** and runs `gh auth login --scopes repo,workflow,read:org,read:public_key`.
 10. **Configures inbound SSH** (if enabled): installs `openssh-server`, fetches your GitHub-registered SSH pubkeys, lets you pick which to install in `~/.ssh/authorized_keys`. Optional: add another GitHub user's keys.
 11. **Registers `itc-claude-marketplace`** and **installs `itc-base`** plugin.
 12. **Hands off** to a Claude session opened in your workspace with `/itc-base-setup` invoked.
@@ -124,7 +124,7 @@ sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
   | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
 sudo apt-get update && sudo apt-get install -y gh
-gh auth login --scopes "repo,workflow,read:org" --hostname github.com --git-protocol https --web
+gh auth login --scopes "repo,workflow,read:org,read:public_key" --hostname github.com --git-protocol https --web
 ```
 
 ### 8. Inbound SSH (optional, if accessing this box remotely)
