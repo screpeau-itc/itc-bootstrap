@@ -615,15 +615,18 @@ else
   claude plugin marketplace add screpeau-itc/itc-claude-marketplace
 fi
 
-# Install itc-base
-# NOTE: itc-base plugin does not yet exist in the marketplace as of this script being written;
-# this install will fail until the layer-2 batch creates it. The installer treats that as a
-# non-fatal warning at the final hand-off step rather than failing here.
+# Install itc-base. Until the layer-2 batch creates this plugin, the install
+# will fail; track success so the handoff step can degrade gracefully (launch
+# claude without the slash command rather than handing into an "Unknown
+# command: /itc-base-setup" prompt).
+ITC_BASE_INSTALLED=n
 if claude plugin list 2>/dev/null | grep -q "itc-base"; then
   info "Plugin itc-base already installed"
+  ITC_BASE_INSTALLED=y
 else
   if claude plugin install itc-base@itc-claude-marketplace 2>&1; then
     info "Installed plugin: itc-base"
+    ITC_BASE_INSTALLED=y
   else
     info "${C_YELLOW}itc-base plugin install failed — likely the plugin does not yet exist in the marketplace.${C_RESET}"
     info "${C_YELLOW}This is expected during the layer-1-only phase. Continuing.${C_RESET}"
@@ -643,7 +646,11 @@ info "${C_GREEN}${C_BOLD}══════════════════�
 echo
 info "Workspace: $WORKSPACE_DIR"
 info "Marketplace: itc-claude-marketplace (registered)"
-info "Plugin: itc-base (installed if available)"
+if [[ "$ITC_BASE_INSTALLED" == "y" ]]; then
+  info "Plugin: itc-base (installed)"
+else
+  info "Plugin: itc-base ${C_YELLOW}(not yet available — layer-2 work)${C_RESET}"
+fi
 echo
 
 if [[ "$ENV_TYPE" == "wsl" ]]; then
@@ -661,5 +668,12 @@ cd "$WORKSPACE_DIR"
 #      consume the post-exec lines of install.sh as input (observed in T18).
 #   2) The trailing line of install.sh is this exec — nothing after — so
 #      even if a future edit forgets (1), there's no bash code left to leak.
+# Only pass /itc-base-setup if the plugin actually installed; otherwise launch
+# bare claude so the user doesn't land on an "Unknown command" prompt.
 # Initial prompt as positional argument matches claude CLI 2.1.x convention.
-exec claude "/itc-base-setup" < /dev/tty
+if [[ "$ITC_BASE_INSTALLED" == "y" ]]; then
+  exec claude "/itc-base-setup" < /dev/tty
+else
+  info "${C_YELLOW}Launching bare claude — /itc-base-setup will be available once the itc-base plugin ships.${C_RESET}"
+  exec claude < /dev/tty
+fi
