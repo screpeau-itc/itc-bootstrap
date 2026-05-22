@@ -9,5 +9,83 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-echo "itc-bootstrap: skeleton only — full implementation lands in subsequent commits"
+# ─── Logging helpers ───────────────────────────────────────────────────────────
+
+if [[ -t 1 ]]; then
+  C_RESET=$'\033[0m'; C_BOLD=$'\033[1m'
+  C_GREEN=$'\033[32m'; C_YELLOW=$'\033[33m'; C_RED=$'\033[31m'; C_BLUE=$'\033[34m'
+else
+  C_RESET=""; C_BOLD=""; C_GREEN=""; C_YELLOW=""; C_RED=""; C_BLUE=""
+fi
+
+step_start() { printf '%s[%s]%s %s\n' "$C_BLUE$C_BOLD" "$1" "$C_RESET" "$2"; }
+step_done()  { printf '%s[%s]%s %s✓ done%s\n' "$C_BLUE$C_BOLD" "$1" "$C_RESET" "$C_GREEN" "$C_RESET"; }
+step_skip()  { printf '%s[%s]%s %s○ skipped%s (%s)\n' "$C_BLUE$C_BOLD" "$1" "$C_RESET" "$C_YELLOW" "$C_RESET" "$2"; }
+step_fail()  { printf '%s[%s]%s %s✗ FAILED%s: %s\n' "$C_BLUE$C_BOLD" "$1" "$C_RESET" "$C_RED" "$C_RESET" "$2" >&2; }
+info()       { printf '       %s\n' "$1"; }
+prompt()     { printf '%s? %s%s ' "$C_BOLD" "$1" "$C_RESET"; }
+
+# ─── Safety pre-flight ─────────────────────────────────────────────────────────
+
+if [[ $EUID -eq 0 ]]; then
+  step_fail "preflight" "do not run this script as root; run as your normal user (the script sudos the steps that need elevation)"
+  exit 1
+fi
+
+# ─── Detection ─────────────────────────────────────────────────────────────────
+
+detect_distro() {
+  if [[ ! -r /etc/os-release ]]; then
+    echo "unknown"
+    return
+  fi
+  # shellcheck disable=SC1091
+  source /etc/os-release
+  echo "${ID:-unknown}"
+}
+
+detect_env() {
+  if grep -qiE 'microsoft|wsl' /proc/version 2>/dev/null; then
+    echo "wsl"
+  elif [[ -f /.dockerenv ]] || grep -q docker /proc/1/cgroup 2>/dev/null; then
+    echo "docker"
+  elif grep -q lxc /proc/1/cgroup 2>/dev/null \
+       || [[ "$(systemd-detect-virt --container 2>/dev/null)" == "lxc" ]]; then
+    echo "lxc"
+  elif command -v systemd-detect-virt >/dev/null 2>&1; then
+    virt=$(systemd-detect-virt 2>/dev/null || echo "none")
+    if [[ "$virt" != "none" ]]; then
+      echo "vm"
+    else
+      echo "native"
+    fi
+  else
+    echo "native"
+  fi
+}
+
+step_start "detect" "Detecting distro and environment"
+DISTRO=$(detect_distro)
+ENV_TYPE=$(detect_env)
+info "Distro: $DISTRO"
+info "Environment: $ENV_TYPE"
+
+case "$DISTRO" in
+  ubuntu|debian)
+    step_done "detect"
+    ;;
+  *)
+    step_fail "detect" "MVP supports Ubuntu/Debian only — detected '$DISTRO'"
+    info "For other distros, see README.md § Manual mode."
+    exit 1
+    ;;
+esac
+
+# Default inbound-SSH choice based on env (overridable in prompts below):
+case "$ENV_TYPE" in
+  wsl|docker|lxc|vm) DEFAULT_INBOUND_SSH="y" ;;
+  *)                  DEFAULT_INBOUND_SSH="n" ;;
+esac
+
+echo "itc-bootstrap: detection complete — full implementation in subsequent commits"
 exit 0
