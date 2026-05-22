@@ -174,5 +174,41 @@ sudo apt-get install -y "${BASE_PACKAGES[@]}"
 
 step_done "base-pkgs"
 
-echo "itc-bootstrap: base packages installed — remaining steps land in subsequent commits"
+# ─── [wsl-conf] WSL overlay ────────────────────────────────────────────────────
+
+if [[ "$ENV_TYPE" == "wsl" ]]; then
+  step_start "wsl-conf" "Writing /etc/wsl.conf"
+
+  WSL_CONF_NEW=$(cat <<'EOF'
+[boot]
+systemd=true
+
+[user]
+default=screpeau
+
+[interop]
+appendWindowsPath=false
+
+[automount]
+enabled=false
+EOF
+)
+
+  if [[ -f /etc/wsl.conf ]] && diff -q <(echo "$WSL_CONF_NEW") /etc/wsl.conf >/dev/null 2>&1; then
+    step_skip "wsl-conf" "/etc/wsl.conf already matches"
+  else
+    if [[ -f /etc/wsl.conf ]]; then
+      BACKUP="/etc/wsl.conf.bak.$(date +%Y%m%d-%H%M%S)"
+      sudo cp /etc/wsl.conf "$BACKUP"
+      info "Backed up existing /etc/wsl.conf to $BACKUP"
+    fi
+    echo "$WSL_CONF_NEW" | sudo tee /etc/wsl.conf > /dev/null
+    step_done "wsl-conf"
+    info "${C_YELLOW}Run 'wsl --shutdown' from Windows PowerShell after this script finishes to pick up the new config.${C_RESET}"
+  fi
+else
+  : # not WSL, skip silently
+fi
+
+echo "itc-bootstrap: WSL overlay handled — remaining steps land in subsequent commits"
 exit 0
