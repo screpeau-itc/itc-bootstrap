@@ -177,6 +177,9 @@ step_start "base-pkgs" "Installing base packages"
 BASE_PACKAGES=(
   build-essential git ca-certificates gnupg lsb-release jq tmux unzip
   python3-pip python3-venv pipx
+  # util-linux-extra provides `newgrp`, used after the docker-group add so the
+  # user can pick up new group membership without logging out.
+  util-linux-extra
 )
 
 # Update apt index (quietly, but show errors)

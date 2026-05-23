@@ -58,7 +58,7 @@ If you're on a distro the installer doesn't support (anything besides Ubuntu/Deb
 ```bash
 sudo apt-get update && sudo apt-get install -y \
   build-essential git ca-certificates gnupg lsb-release jq tmux unzip curl \
-  python3-pip python3-venv pipx
+  python3-pip python3-venv pipx util-linux-extra
 ```
 
 ### 2. WSL overlay (WSL only)
