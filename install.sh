@@ -352,12 +352,16 @@ step_done "base-pkgs"
 if [[ "$ENV_TYPE" == "wsl" ]]; then
   step_start "wsl-conf" "Writing /etc/wsl.conf"
 
-  WSL_CONF_NEW=$(cat <<'EOF'
+  # v0.4.1: use the current UNIX user, not a hardcoded name. ${USER} is set by
+  # the login shell; fall back to whoami if it isn't (e.g., in some non-interactive
+  # contexts). Note unquoted EOF so the variable expands.
+  WSL_DEFAULT_USER="${USER:-$(whoami)}"
+  WSL_CONF_NEW=$(cat <<EOF
 [boot]
 systemd=true
 
 [user]
-default=screpeau
+default=${WSL_DEFAULT_USER}
 
 [interop]
 appendWindowsPath=false

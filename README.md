@@ -68,12 +68,14 @@ sudo apt-get update && sudo apt-get install -y \
 ### 2. WSL overlay (WSL only)
 
 ```bash
-sudo tee /etc/wsl.conf > /dev/null <<'EOF'
+# Replace $(whoami) with your actual username if you want the value baked in,
+# or run this verbatim — the bash command expands $(whoami) at write time.
+sudo tee /etc/wsl.conf > /dev/null <<EOF
 [boot]
 systemd=true
 
 [user]
-default=screpeau
+default=$(whoami)
 
 [interop]
 appendWindowsPath=false
