@@ -69,6 +69,48 @@ fi
 # causing the installer to redundantly re-run on every invocation.
 export PATH="$HOME/.local/bin:$PATH"
 
+# ─── Auto-logging (v0.4.6) ─────────────────────────────────────────────────────
+# Capture all script output to a timestamped log file under
+# ~/.local/share/itc-bootstrap/logs/. Helps debug install issues without the
+# operator having to remember `tee` redirects. Both phase 1 and phase 2 (auto-
+# resume) get their own log files. Log path is printed at start and end of run.
+
+ITC_LOG_DIR="$HOME/.local/share/itc-bootstrap/logs"
+mkdir -p "$ITC_LOG_DIR"
+ITC_LOG_FILE="$ITC_LOG_DIR/install-$(date +%Y%m%d-%H%M%S).log"
+
+# Seed the log with run metadata before we redirect.
+{
+  echo "=== itc-bootstrap install log ==="
+  echo "Started:  $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  echo "User:     $USER"
+  echo "Hostname: $(hostname)"
+  echo "Pwd:      $(pwd)"
+  echo "Bash:     $BASH_VERSION"
+  echo "Phase 2:  ${ITC_BOOTSTRAP_AUTO_RESUME:-no}"
+  echo "==="
+  echo ""
+} > "$ITC_LOG_FILE"
+
+# Redirect stdout+stderr through tee so output goes to BOTH the terminal and
+# the log file. Process substitution runs tee in a subshell; bash forks it and
+# the main script's fds 1 and 2 point at tee's stdin from here on.
+exec > >(tee -a "$ITC_LOG_FILE") 2>&1
+
+# Trap EXIT so the operator sees the log path one last time when the script
+# ends — useful when a silent crash, manual interrupt, or exec-to-claude
+# happens and they want to see what was captured.
+_itc_print_log_path() {
+  printf '\n%sLog file (this run):%s %s\n' "$C_BLUE$C_BOLD" "$C_RESET" "$ITC_LOG_FILE" >/dev/tty 2>/dev/null || \
+    printf '\nLog file (this run): %s\n' "$ITC_LOG_FILE"
+}
+trap _itc_print_log_path EXIT
+
+# Announce log location at the top so it's visible early.
+printf '%sLog file:%s %s\n' "$C_BLUE$C_BOLD" "$C_RESET" "$ITC_LOG_FILE"
+info "(All output of this run is captured. Share this log if anything breaks.)"
+echo
+
 # ─── Detection ─────────────────────────────────────────────────────────────────
 
 detect_distro() {
