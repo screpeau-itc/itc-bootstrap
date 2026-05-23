@@ -21,6 +21,10 @@ curl -fsSL "https://raw.githubusercontent.com/screpeau-itc/itc-bootstrap/main/in
 
 The installer asks three questions upfront, then runs uninterrupted until it pauses for Claude Code's browser authentication and GitHub's browser authentication. Plan ~15–20 minutes for the full run.
 
+**Phase split (v0.3.0+):** On a fresh-distro install, the installer pauses after the Docker step, installs a tiny `~/.bashrc` hook, and prints restart instructions. After you `wsl --shutdown && wsl`, the next interactive bash login prompts `[Y/n/never]` to finish setup. Yes runs the Claude handoff in a fully-active shell (systemd up, docker group live, PATH set); the bashrc hook then removes itself. Re-runs on an already-configured distro never trigger this split — the installer flows straight through with no extra ceremony.
+
+**Preference memory (v0.3.0+):** Your answers to the three prompts persist in `~/.config/itc-bootstrap/preferences.env` and become the defaults on subsequent runs. Safe to delete to reset.
+
 ## What the installer does
 
 1. **Detects** distro (Ubuntu/Debian only — bails on others with manual-mode pointer) and environment (WSL, Docker, LXC, VM, native).
@@ -187,6 +191,17 @@ claude "/itc-base-setup"
 **Inbound SSH on WSL: "I can't reach it from my phone / another machine"**: WSL2 networking is NAT'd behind the Windows host. The SSH server's IP (printed at the end of the install) is reachable from the Windows host only, and rerolls each `wsl --shutdown`. External reach requires `netsh portproxy` on the Windows side (not recommended) or ZeroTier inside the distro (deferred — see the spec).
 
 **"Do you trust this directory?" prompt still appears**: the trust-config schema may have changed in a newer Claude Code version. Verify `~/.claude.json` contains an entry for your workspace path under `projects`. If not, manually accept the prompt (one-time per directory).
+
+**Auto-resume prompt didn't fire on next login**: the hook only adds itself to `~/.bashrc`. If your default shell isn't bash (zsh, fish, etc.), the prompt won't appear automatically. Run the install.sh curl one-liner manually after restart — the installer's idempotent fast-paths will skip everything that's already done and land you at the Claude handoff.
+
+**Got the "Phase 1 has already completed" message and don't want to restart**: this guard prevents you from running the installer twice without restarting between phases (which would defeat the phase split). Either restart WSL as instructed, OR remove the marker manually and re-run:
+
+```bash
+rm ~/.local/share/itc-bootstrap/resume.sh
+sed -i '/^# >>> itc-bootstrap auto-resume >>>$/,/^# <<< itc-bootstrap auto-resume <<<$/d' ~/.bashrc
+```
+
+**Want to reset remembered preferences**: delete `~/.config/itc-bootstrap/preferences.env`. The next run will show hardcoded defaults instead.
 
 ## License
 
