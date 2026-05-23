@@ -40,6 +40,14 @@ if [[ $EUID -eq 0 ]]; then
   exit 1
 fi
 
+# Ensure ~/.local/bin is on PATH for the duration of this script. We're invoked
+# via `curl ... | bash`, which is non-interactive — bash skips ~/.bashrc, so
+# even though the claude native installer added the export there, this shell
+# doesn't see it. Without this prepend, fast-path checks like
+# `command -v claude` fail when claude is already at ~/.local/bin/claude,
+# causing the installer to redundantly re-run on every invocation.
+export PATH="$HOME/.local/bin:$PATH"
+
 # ─── Detection ─────────────────────────────────────────────────────────────────
 
 detect_distro() {
