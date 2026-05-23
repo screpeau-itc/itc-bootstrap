@@ -438,16 +438,39 @@ fi
 info "Workspace dir: $WORKSPACE_DIR"
 step_done "dev-dir"
 
-# ─── [claude-trust] Pre-stage Claude trust config ──────────────────────────────
+# ─── [claude-trust] Pre-stage Claude trust + onboarding skip ──────────────────
 
-step_start "claude-trust" "Pre-trusting workspace directory in Claude config"
+step_start "claude-trust" "Pre-trusting workspace dir + suppressing claude first-run prompts"
 
 CLAUDE_CONFIG="$HOME/.claude.json"
 
-# If file doesn't exist, create it with just our trust entry
+# v0.4.4: in addition to trusting the workspace dir, pre-stage claude's
+# onboarding-completion flags so the operator doesn't see the theme picker,
+# welcome screen, or marketplace auto-install prompt on first launch. The
+# handoff exec passes the slash command immediately, so onboarding prompts
+# would intercept and cause "Unknown command" errors.
+#
+# Keys set:
+#   hasCompletedOnboarding=true + lastOnboardingVersion=<claude version>
+#     → suppresses theme picker and welcome flow
+#   officialMarketplaceAutoInstallAttempted=true + officialMarketplaceAutoInstalled=true
+#     → suppresses claude's auto-marketplace prompt (itc-base's stage-1 installs
+#       plugins explicitly, so claude's auto-install doesn't need to fire)
+#
+# Capture claude version for lastOnboardingVersion. Falls back to '2.1.0'
+# if claude --version isn't on PATH yet (shouldn't happen — claude install
+# is earlier in phase 1).
+CLAUDE_VERSION=$(claude --version 2>/dev/null | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+CLAUDE_VERSION="${CLAUDE_VERSION:-2.1.0}"
+
+# If file doesn't exist, create it with our trust entry + onboarding skip flags
 if [[ ! -f "$CLAUDE_CONFIG" ]]; then
   cat > "$CLAUDE_CONFIG" <<EOF
 {
+  "hasCompletedOnboarding": true,
+  "lastOnboardingVersion": "$CLAUDE_VERSION",
+  "officialMarketplaceAutoInstallAttempted": true,
+  "officialMarketplaceAutoInstalled": true,
   "projects": {
     "$WORKSPACE_DIR": {
       "hasTrustDialogAccepted": true
@@ -458,10 +481,15 @@ EOF
   chmod 600 "$CLAUDE_CONFIG"
   step_done "claude-trust"
 else
-  # File exists — merge using jq (jq is in our base packages, installed in Task 5)
+  # File exists — merge using jq. Sets onboarding flags only if not already set
+  # (// operator preserves operator-customized values).
   TMP=$(mktemp)
-  jq --arg path "$WORKSPACE_DIR" \
-     '.projects[$path] = ((.projects[$path] // {}) + {"hasTrustDialogAccepted": true})' \
+  jq --arg path "$WORKSPACE_DIR" --arg ver "$CLAUDE_VERSION" \
+     '.projects[$path] = ((.projects[$path] // {}) + {"hasTrustDialogAccepted": true})
+      | .hasCompletedOnboarding = (.hasCompletedOnboarding // true)
+      | .lastOnboardingVersion = (.lastOnboardingVersion // $ver)
+      | .officialMarketplaceAutoInstallAttempted = (.officialMarketplaceAutoInstallAttempted // true)
+      | .officialMarketplaceAutoInstalled = (.officialMarketplaceAutoInstalled // true)' \
      "$CLAUDE_CONFIG" > "$TMP"
   # Verify the merge produced valid JSON
   if jq -e . "$TMP" >/dev/null 2>&1; then
@@ -984,12 +1012,14 @@ cd "$WORKSPACE_DIR"
 #      consume the post-exec lines of install.sh as input (observed in T18).
 #   2) The trailing line of install.sh is this exec — nothing after — so
 #      even if a future edit forgets (1), there's no bash code left to leak.
-# Only pass /itc-base-setup if the plugin actually installed; otherwise launch
+# Only pass the slash command if the plugin actually installed; otherwise launch
 # bare claude so the user doesn't land on an "Unknown command" prompt.
 # Initial prompt as positional argument matches claude CLI 2.1.x convention.
+# v0.4.4: slash command requires the plugin namespace prefix (/itc-base:itc-base-setup)
+# — the bare /itc-base-setup form returns "Unknown command".
 if [[ "$ITC_BASE_INSTALLED" == "y" ]]; then
-  exec claude "/itc-base-setup" < /dev/tty
+  exec claude "/itc-base:itc-base-setup" < /dev/tty
 else
-  info "${C_YELLOW}Launching bare claude — /itc-base-setup will be available once the itc-base plugin ships.${C_RESET}"
+  info "${C_YELLOW}Launching bare claude — /itc-base:itc-base-setup will be available once the itc-base plugin ships.${C_RESET}"
   exec claude < /dev/tty
 fi
