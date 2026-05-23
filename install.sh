@@ -797,6 +797,33 @@ if [[ "$WANT_DOCKER" == "y" ]]; then
   step_done "docker"
 fi
 
+# ─── [phase-1-end] Phase 1 / Phase 2 split point ──────────────────────────────
+#
+# If this run made changes that need a shell or WSL restart, pause here.
+# Install the auto-resume hook, print restart instructions, and exit cleanly.
+# The [marketplace] + [handoff] steps will run on the re-curl after restart
+# (bashrc hook → resume.sh → Y → curl install.sh with ITC_BOOTSTRAP_AUTO_RESUME=1).
+#
+# Re-runs on already-bootstrapped distros (where wsl.conf already matches and
+# docker was already installed) flow straight past this with both flags 'n'.
+
+if [[ "$WSL_CONF_WAS_WRITTEN" == "y" || "$DOCKER_WAS_INSTALLED" == "y" ]]; then
+  step_start "phase-1-end" "Phase 1 complete — installing auto-resume hook"
+  install_resume_artifacts
+  step_done "phase-1-end"
+  echo
+  info "${C_GREEN}═══════════════════════════════════════════════════════${C_RESET}"
+  info "${C_GREEN}  Phase 1 done. Restart WSL to finish setup:${C_RESET}"
+  info "${C_GREEN}═══════════════════════════════════════════════════════${C_RESET}"
+  info "  1) exit"
+  info "  2) From PowerShell:  wsl --shutdown && wsl"
+  info "Your next bash login will prompt to run phase 2 (claude handoff)."
+  echo
+  info "If for any reason the prompt doesn't fire (non-bash shell, etc.),"
+  info "run the install.sh curl one-liner manually after restart."
+  exit 0
+fi
+
 # ─── [marketplace] Register marketplace + install itc-base ─────────────────────
 
 step_start "marketplace" "Registering itc-claude-marketplace + installing itc-base"
