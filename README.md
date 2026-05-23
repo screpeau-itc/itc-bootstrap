@@ -3,11 +3,11 @@
 Cold-start installer that takes a bare Ubuntu/Debian (including a fresh WSL distro) from `apt update` to a working Claude Code state with the `itc-claude-marketplace` registered and the `itc-base` plugin installed.
 
 After this installer finishes, you have:
-- A `~/dev/<workspace-name>` folder pre-trusted in Claude Code's config
+- A `~/dev/itx-claude-admin/` folder (the system admin workspace) pre-trusted in Claude Code's config
 - Claude CLI installed and authenticated to your Anthropic account
 - GitHub CLI installed and authenticated with scopes `repo,workflow,read:org,read:public_key`
 - (Optional) An SSH server with your GitHub-registered public keys in `authorized_keys`
-- A Claude Code session opened in the workspace, ready to invoke `/itc-base-setup` for the layer-2 setup
+- A Claude Code session opened in `~/dev/itx-claude-admin/`, running `/itc-base-setup` (from itc-base v0.1.0) for the layer-2 setup
 
 ## Quick start
 
@@ -19,7 +19,7 @@ sudo apt install -y curl
 curl -fsSL "https://raw.githubusercontent.com/screpeau-itc/itc-bootstrap/main/install.sh?v=$(date +%s)" | bash
 ```
 
-The installer asks three questions upfront, then runs uninterrupted until it pauses for Claude Code's browser authentication and GitHub's browser authentication. Plan ~15–20 minutes for the full run.
+The installer asks two questions upfront (inbound SSH, install Docker), then runs uninterrupted until it pauses for Claude Code's browser authentication and GitHub's browser authentication. Plan ~15–20 minutes for the full run.
 
 **Phase split (v0.3.0+):** On a fresh-distro install, the installer pauses after the Docker step, installs a tiny `~/.bashrc` hook, and prints restart instructions. After you run `wsl --shutdown ; wsl -d Ubuntu` from PowerShell (use `;` not `&&` — Windows PS 5.1 doesn't support `&&`), the next interactive bash login prompts `[Y/n/never]` to finish setup. Yes runs the Claude handoff in a fully-active shell (systemd up, docker group live, PATH set); the bashrc hook then removes itself. Re-runs on an already-configured distro never trigger this split — the installer flows straight through with no extra ceremony.
 
@@ -28,10 +28,10 @@ The installer asks three questions upfront, then runs uninterrupted until it pau
 ## What the installer does
 
 1. **Detects** distro (Ubuntu/Debian only — bails on others with manual-mode pointer) and environment (WSL, Docker, LXC, VM, native).
-2. **Asks** three quick questions: workspace folder name (default `itx-default-code`), enable inbound SSH (default Yes on WSL/Docker/LXC/VM, No on native), install Docker (default Yes).
+2. **Asks** two quick questions: enable inbound SSH (default Yes on WSL/Docker/LXC/VM, No on native), install Docker (default Yes). (v0.4.0+: workspace-name prompt removed — the admin workspace dir is now always `~/dev/itx-claude-admin/`.)
 3. **Installs base packages**: `build-essential git ca-certificates gnupg lsb-release jq tmux unzip python3-pip python3-venv pipx`.
 4. **Writes `/etc/wsl.conf`** (WSL only): enables systemd, sets default user, mounts `/mnt/c` **read-only** (Windows files visible but not writable from WSL), disables Windows PATH inheritance.
-5. **Creates the workspace directory** under `~/dev/<chosen-name>`.
+5. **Creates the admin workspace directory** at `~/dev/itx-claude-admin/`.
 6. **Pre-stages Claude Code's trust config** so the workspace doesn't trigger the "Do you trust this directory?" prompt on first run.
 7. **Installs Node LTS** via NodeSource.
 8. **Installs Claude Code** via Anthropic's official native installer (drops `claude` in `~/.local/bin`, auto-update works out of the box) and pauses for browser auth.
@@ -89,7 +89,7 @@ EOF
 ### 3. Workspace directory
 
 ```bash
-mkdir -p ~/dev/itx-default-code
+mkdir -p ~/dev/itx-claude-admin
 ```
 
 ### 4. Pre-stage Claude trust config
@@ -98,7 +98,7 @@ mkdir -p ~/dev/itx-default-code
 cat > ~/.claude.json <<EOF
 {
   "projects": {
-    "$HOME/dev/itx-default-code": {
+    "$HOME/dev/itx-claude-admin": {
       "hasTrustDialogAccepted": true
     }
   }
@@ -176,7 +176,7 @@ claude plugin install itc-base@itc-claude-marketplace
 ### 11. Open the workspace
 
 ```bash
-cd ~/dev/itx-default-code
+cd ~/dev/itx-claude-admin
 claude "/itc-base-setup"
 ```
 
