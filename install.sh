@@ -147,6 +147,76 @@ ask_yes_no() {
   done
 }
 
+# Phase-1-end helper (used by the [phase-1-end] branch in Task 5).
+# Writes resume.sh into ~/.local/share/itc-bootstrap and appends a guarded
+# snippet to ~/.bashrc that sources it on next interactive login.
+# Idempotent: re-writes resume.sh unconditionally (so updates ship); appends
+# the bashrc snippet only if its start-marker isn't already present.
+install_resume_artifacts() {
+  local resume_dir="$HOME/.local/share/itc-bootstrap"
+  local resume_path="$resume_dir/resume.sh"
+  local bashrc="$HOME/.bashrc"
+  local start_marker="# >>> itc-bootstrap auto-resume >>>"
+  local end_marker="# <<< itc-bootstrap auto-resume <<<"
+
+  mkdir -p "$resume_dir"
+
+  # Single-quoted heredoc: $vars in the body stay literal, expanded at
+  # source-time inside the user's interactive shell — not now.
+  cat > "$resume_path" <<'RESUME_EOF'
+#!/usr/bin/env bash
+# itc-bootstrap auto-resume — sourced by ~/.bashrc after phase 1.
+# Prompts user to run phase 2; self-deletes (and removes bashrc hook) on Y or never.
+
+# Defense: only prompt on interactive shells with a real tty.
+if [[ $- != *i* ]] || [[ ! -t 0 ]] || [[ ! -t 1 ]]; then
+  return 0 2>/dev/null || exit 0
+fi
+
+_itc_resume_self="$HOME/.local/share/itc-bootstrap/resume.sh"
+_itc_bashrc="$HOME/.bashrc"
+
+_itc_cleanup() {
+  rm -f "$_itc_resume_self"
+  if [[ -f "$_itc_bashrc" ]]; then
+    sed -i '/^# >>> itc-bootstrap auto-resume >>>$/,/^# <<< itc-bootstrap auto-resume <<<$/d' "$_itc_bashrc"
+  fi
+}
+
+printf '\n\033[1mitc-bootstrap:\033[0m phase 1 complete. Run phase 2 (claude handoff) now? \033[33m[Y/n/never]\033[0m '
+read -r _itc_reply < /dev/tty
+case "${_itc_reply,,}" in
+  ""|y|yes)
+    _itc_cleanup
+    printf 'Running phase 2...\n\n'
+    ITC_BOOTSTRAP_AUTO_RESUME=1 curl -fsSL "https://raw.githubusercontent.com/screpeau-itc/itc-bootstrap/main/install.sh?v=$(date +%s)" | bash
+    ;;
+  never)
+    _itc_cleanup
+    printf 'OK, dismissed. To finish later, re-run the install.sh curl one-liner.\n'
+    ;;
+  *)
+    printf 'OK, will ask again next login. Answer "never" to dismiss permanently.\n'
+    ;;
+esac
+
+unset _itc_reply _itc_resume_self _itc_bashrc
+unset -f _itc_cleanup
+RESUME_EOF
+  chmod 644 "$resume_path"
+
+  # Append bashrc snippet only if start-marker isn't already there.
+  # `touch` defends against the (rare) case of a missing ~/.bashrc.
+  touch "$bashrc"
+  if ! grep -Fq "$start_marker" "$bashrc"; then
+    cat >> "$bashrc" <<EOF
+$start_marker
+[[ -f "\$HOME/.local/share/itc-bootstrap/resume.sh" ]] && source "\$HOME/.local/share/itc-bootstrap/resume.sh"
+$end_marker
+EOF
+  fi
+}
+
 echo
 info "${C_BOLD}A few quick questions, then the installer runs uninterrupted until it needs interactive auth.${C_RESET}"
 echo
