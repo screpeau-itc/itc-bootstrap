@@ -241,6 +241,36 @@ EOF
   fi
 }
 
+# Helper: appends a guarded "auto-cd to ~/dev (or \$HOME)" snippet to ~/.bashrc.
+# Solves the WSL paper-cut where launching from a PowerShell prompt at e.g.
+# C:\windows\system32 lands you in /mnt/c/windows/system32 because WSL
+# inherits the launcher's CWD. We snap to ~/dev (or \$HOME if that doesn't
+# exist) on interactive shells whose CWD looks Windows-inherited.
+# Idempotent: skips if our start-marker is already present.
+install_auto_cd_to_home() {
+  local bashrc="$HOME/.bashrc"
+  local start_marker="# >>> itc-bootstrap auto-cd >>>"
+  local end_marker="# <<< itc-bootstrap auto-cd <<<"
+
+  touch "$bashrc"
+  if ! grep -Fq "$start_marker" "$bashrc"; then
+    cat >> "$bashrc" <<EOF
+$start_marker
+# Auto-cd to ~/dev (or \$HOME) when WSL launches with a Windows-inherited
+# /mnt/* CWD. Interactive shells only — scripts that explicitly cd into
+# a /mnt path are unaffected.
+if [[ \$- == *i* ]] && [[ "\$PWD" == /mnt/* ]]; then
+  if [[ -d "\$HOME/dev" ]]; then
+    cd "\$HOME/dev"
+  else
+    cd "\$HOME"
+  fi
+fi
+$end_marker
+EOF
+  fi
+}
+
 echo
 info "${C_BOLD}A few quick questions, then the installer runs uninterrupted until it needs interactive auth.${C_RESET}"
 echo
@@ -408,6 +438,12 @@ else
     exit 1
   fi
 fi
+
+# ─── [shell-comfort] Sensible bashrc defaults ─────────────────────────────────
+
+step_start "shell-comfort" "Adding shell-comfort defaults to ~/.bashrc"
+install_auto_cd_to_home
+step_done "shell-comfort"
 
 # ─── [node] Node LTS ───────────────────────────────────────────────────────────
 
