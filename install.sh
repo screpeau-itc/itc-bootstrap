@@ -51,7 +51,9 @@ if [[ -f "$HOME/.local/share/itc-bootstrap/resume.sh" ]]; then
   info "Phase 1 has already completed; phase 2 is pending."
   info "Restart WSL to finish setup:"
   info "  1) exit"
-  info "  2) From PowerShell:  wsl --shutdown && wsl"
+  info "  2) From PowerShell:  wsl --shutdown ; wsl -d Ubuntu"
+  info "     (use ';' not '&&' — Windows PowerShell 5.1 doesn't support '&&'."
+  info "     '-d Ubuntu' explicitly picks the distro in case 'wsl' alone falls back to a system distro.)"
   info "(Your next bash login will prompt to finish.)"
   echo
   info "Or to discard the pending phase 2 and run the installer fresh:"
@@ -816,7 +818,9 @@ if [[ "$WSL_CONF_WAS_WRITTEN" == "y" || "$DOCKER_WAS_INSTALLED" == "y" ]]; then
   info "${C_GREEN}  Phase 1 done. Restart WSL to finish setup:${C_RESET}"
   info "${C_GREEN}═══════════════════════════════════════════════════════${C_RESET}"
   info "  1) exit"
-  info "  2) From PowerShell:  wsl --shutdown && wsl"
+  info "  2) From PowerShell:  wsl --shutdown ; wsl -d Ubuntu"
+  info "     (use ';' not '&&' — Windows PowerShell 5.1 doesn't support '&&'."
+  info "     '-d Ubuntu' explicitly picks the distro in case 'wsl' alone falls back to a system distro.)"
   info "Your next bash login will prompt to run phase 2 (claude handoff)."
   echo
   info "If for any reason the prompt doesn't fire (non-bash shell, etc.),"

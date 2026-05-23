@@ -21,7 +21,7 @@ curl -fsSL "https://raw.githubusercontent.com/screpeau-itc/itc-bootstrap/main/in
 
 The installer asks three questions upfront, then runs uninterrupted until it pauses for Claude Code's browser authentication and GitHub's browser authentication. Plan ~15–20 minutes for the full run.
 
-**Phase split (v0.3.0+):** On a fresh-distro install, the installer pauses after the Docker step, installs a tiny `~/.bashrc` hook, and prints restart instructions. After you `wsl --shutdown && wsl`, the next interactive bash login prompts `[Y/n/never]` to finish setup. Yes runs the Claude handoff in a fully-active shell (systemd up, docker group live, PATH set); the bashrc hook then removes itself. Re-runs on an already-configured distro never trigger this split — the installer flows straight through with no extra ceremony.
+**Phase split (v0.3.0+):** On a fresh-distro install, the installer pauses after the Docker step, installs a tiny `~/.bashrc` hook, and prints restart instructions. After you run `wsl --shutdown ; wsl -d Ubuntu` from PowerShell (use `;` not `&&` — Windows PS 5.1 doesn't support `&&`), the next interactive bash login prompts `[Y/n/never]` to finish setup. Yes runs the Claude handoff in a fully-active shell (systemd up, docker group live, PATH set); the bashrc hook then removes itself. Re-runs on an already-configured distro never trigger this split — the installer flows straight through with no extra ceremony.
 
 **Preference memory (v0.3.0+):** Your answers to the three prompts persist in `~/.config/itc-bootstrap/preferences.env` and become the defaults on subsequent runs. Safe to delete to reset.
 
