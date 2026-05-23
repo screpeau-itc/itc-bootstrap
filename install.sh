@@ -334,6 +334,20 @@ if [[ -f "$_ITC_PREFS" ]]; then
   source "$_ITC_PREFS"
 fi
 
+# v0.4.7: detect existing passwordless sudo BEFORE prompts. If NOPASSWD: ALL
+# is already in the operator's sudo policy (from a prior install run or other
+# config), skip the passwordless-sudo prompt entirely on this run — no point
+# asking when it's already active.
+#
+# sudo -n -l: non-interactive list of sudo privileges. Succeeds if NOPASSWD or
+# cached creds; output includes 'NOPASSWD: ALL' iff the operator has
+# unconditional passwordless sudo. Grep for that exact pattern (defensive — a
+# partial 'NOPASSWD: /usr/bin/foo' entry would NOT match).
+PWLESS_ALREADY_ACTIVE=n
+if sudo -n -l 2>/dev/null | grep -qE 'NOPASSWD.*ALL'; then
+  PWLESS_ALREADY_ACTIVE=y
+fi
+
 # Auto-resume path (phase 2 from resume.sh): skip prompts, use what phase 1 saved.
 # The ITC_BOOTSTRAP_AUTO_RESUME=1 env var is set ONLY by resume.sh's Y branch.
 if [[ "${ITC_BOOTSTRAP_AUTO_RESUME:-}" == "1" && -f "$_ITC_PREFS" ]]; then
@@ -361,8 +375,14 @@ else
       ;;
   esac
 
-  ask_yes_no       "Set up passwordless sudo for $USER (recommended for unattended install)?" \
+  # v0.4.7: only ask about passwordless sudo if it's NOT already active.
+  if [[ "$PWLESS_ALREADY_ACTIVE" == "y" ]]; then
+    WANT_PASSWORDLESS_SUDO=y
+    info "Passwordless sudo already active for $USER — skipping prompt."
+  else
+    ask_yes_no     "Set up passwordless sudo for $USER (recommended for unattended install)?" \
                    "${WANT_PASSWORDLESS_SUDO:-y}" WANT_PASSWORDLESS_SUDO
+  fi
 fi
 
 # v0.4.0: admin workspace dir is now fixed. /itc-base-setup (itc-base plugin)
