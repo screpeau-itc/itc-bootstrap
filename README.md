@@ -19,22 +19,23 @@ sudo apt install -y curl
 curl -fsSL "https://raw.githubusercontent.com/screpeau-itc/itc-bootstrap/main/install.sh?v=$(date +%s)" | bash
 ```
 
-The installer asks two questions upfront, then runs uninterrupted until it pauses for Claude Code's browser authentication and GitHub's browser authentication. Plan ~15–20 minutes for the full run.
+The installer asks three questions upfront, then runs uninterrupted until it pauses for Claude Code's browser authentication and GitHub's browser authentication. Plan ~15–20 minutes for the full run.
 
 ## What the installer does
 
 1. **Detects** distro (Ubuntu/Debian only — bails on others with manual-mode pointer) and environment (WSL, Docker, LXC, VM, native).
-2. **Asks** two quick questions: workspace folder name (default `itx-default-code`), enable inbound SSH (default Yes on WSL/Docker/LXC/VM, No on native).
-3. **Installs base packages**: `build-essential git ca-certificates gnupg lsb-release jq tmux unzip`.
+2. **Asks** three quick questions: workspace folder name (default `itx-default-code`), enable inbound SSH (default Yes on WSL/Docker/LXC/VM, No on native), install Docker (default Yes).
+3. **Installs base packages**: `build-essential git ca-certificates gnupg lsb-release jq tmux unzip python3-pip python3-venv pipx`.
 4. **Writes `/etc/wsl.conf`** (WSL only): enables systemd, sets default user, mounts `/mnt/c` **read-only** (Windows files visible but not writable from WSL), disables Windows PATH inheritance.
 5. **Creates the workspace directory** under `~/dev/<chosen-name>`.
 6. **Pre-stages Claude Code's trust config** so the workspace doesn't trigger the "Do you trust this directory?" prompt on first run.
 7. **Installs Node LTS** via NodeSource.
-8. **Installs Claude Code CLI** (`npm install -g @anthropic-ai/claude-code`) and pauses for browser auth.
+8. **Installs Claude Code** via Anthropic's official native installer (drops `claude` in `~/.local/bin`, auto-update works out of the box) and pauses for browser auth.
 9. **Installs GitHub CLI** and runs `gh auth login --scopes repo,workflow,read:org,read:public_key`.
 10. **Configures inbound SSH** (if enabled): installs `openssh-server`, fetches your GitHub-registered SSH pubkeys, lets you pick which to install in `~/.ssh/authorized_keys`. Optional: add another GitHub user's keys.
-11. **Registers `itc-claude-marketplace`** and **installs `itc-base`** plugin.
-12. **Hands off** to a Claude session opened in your workspace with `/itc-base-setup` invoked.
+11. **Installs Docker** (if enabled): `docker-ce` + `docker-compose-plugin` from Docker's official apt repo, adds your user to the `docker` group, enables the service via systemd. On a freshly-WSL-configured distro, the service starts after the first `wsl --shutdown`.
+12. **Registers `itc-claude-marketplace`** and attempts to install the `itc-base` plugin (gracefully degrades if the plugin isn't yet published).
+13. **Hands off** to a Claude session opened in your workspace — invoking `/itc-base-setup` if the plugin is available, otherwise launching bare claude.
 
 ## What this does NOT do
 
@@ -43,7 +44,7 @@ This installer is intentionally minimal. The following are deferred to layer-2 w
 - Git identity (`user.name`, `user.email`)
 - Outbound SSH key generation (only set up when a specific workflow needs it)
 - Cloning project repos (the `itc-workspace` plugin handles ispe; other plugins handle their respective repos)
-- Role-specific tooling — Go, Playwright, postgresql-client, Python venv tooling, Grafana stack, Docker engine — all live in opt-in plugins
+- Role-specific tooling — Go, Playwright, postgresql-client, Grafana stack — all live in opt-in plugins
 - `~/.claude/settings.json` customization beyond the trust config
 - Custom hooks
 - Tool-version managers (mise/asdf) — single-version pins are used by each role plugin instead
@@ -56,7 +57,8 @@ If you're on a distro the installer doesn't support (anything besides Ubuntu/Deb
 
 ```bash
 sudo apt-get update && sudo apt-get install -y \
-  build-essential git ca-certificates gnupg lsb-release jq tmux unzip curl
+  build-essential git ca-certificates gnupg lsb-release jq tmux unzip curl \
+  python3-pip python3-venv pipx
 ```
 
 ### 2. WSL overlay (WSL only)
@@ -111,8 +113,12 @@ sudo apt-get install -y nodejs
 ### 6. Claude Code CLI
 
 ```bash
-sudo npm install -g @anthropic-ai/claude-code
-claude        # complete browser auth, then exit
+# Anthropic's official native installer — drops claude in ~/.local/bin
+# (user-owned, so auto-update works). Do NOT use 'sudo npm install -g',
+# which leaves the global modules dir root-owned and breaks auto-update.
+curl -fsSL https://claude.ai/install.sh | bash
+source ~/.bashrc      # picks up the new PATH
+claude                # complete browser auth, then exit
 ```
 
 ### 7. GitHub CLI
@@ -139,14 +145,31 @@ gh ssh-key list --json key --jq '.[].key' | head -1 >> ~/.ssh/authorized_keys
 chmod 600 ~/.ssh/authorized_keys
 ```
 
-### 9. Marketplace + base plugin
+### 9. Docker (optional)
+
+```bash
+# Official Docker apt repo (NOT Ubuntu's docker.io, which lags and omits compose)
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+  | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+sudo chmod a+r /etc/apt/keyrings/docker.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" \
+  | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt-get update && sudo apt-get install -y \
+  docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+sudo usermod -aG docker "$USER"
+sudo systemctl enable --now docker
+# Log out + back in (or run `newgrp docker`) to use docker without sudo.
+```
+
+### 10. Marketplace + base plugin
 
 ```bash
 claude plugin marketplace add screpeau-itc/itc-claude-marketplace
 claude plugin install itc-base@itc-claude-marketplace
 ```
 
-### 10. Open the workspace
+### 11. Open the workspace
 
 ```bash
 cd ~/dev/itx-default-code

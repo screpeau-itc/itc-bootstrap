@@ -154,6 +154,7 @@ echo
 ask_with_default "Workspace folder name (under ~/dev)" "itx-default-code" WORKSPACE_NAME
 ask_yes_no       "Enable inbound SSH on this host (so you can SSH in from another machine)?" \
                  "$DEFAULT_INBOUND_SSH" INBOUND_SSH
+ask_yes_no       "Install Docker (docker-ce + compose plugin)?" "y" WANT_DOCKER
 
 # Folder name sanity: no slashes, no leading dot, non-empty
 if [[ -z "$WORKSPACE_NAME" || "$WORKSPACE_NAME" == .* || "$WORKSPACE_NAME" == */* ]]; then
@@ -166,13 +167,17 @@ WORKSPACE_DIR="$HOME/dev/$WORKSPACE_NAME"
 echo
 info "Will use workspace: $WORKSPACE_DIR"
 info "Inbound SSH:        $([[ "$INBOUND_SSH" == "y" ]] && echo "enabled" || echo "disabled")"
+info "Docker:             $([[ "$WANT_DOCKER" == "y" ]] && echo "install"  || echo "skip")"
 echo
 
 # ─── [base-pkgs] Base packages ─────────────────────────────────────────────────
 
 step_start "base-pkgs" "Installing base packages"
 
-BASE_PACKAGES=(build-essential git ca-certificates gnupg lsb-release jq tmux unzip)
+BASE_PACKAGES=(
+  build-essential git ca-certificates gnupg lsb-release jq tmux unzip
+  python3-pip python3-venv pipx
+)
 
 # Update apt index (quietly, but show errors)
 sudo apt-get update -qq
@@ -611,6 +616,55 @@ if [[ "$INBOUND_SSH" == "y" ]]; then
   step_done "ssh-in"
 fi
 
+# ─── [docker] Docker (optional) ────────────────────────────────────────────────
+
+if [[ "$WANT_DOCKER" == "y" ]]; then
+  step_start "docker" "Installing Docker (docker-ce + compose plugin)"
+
+  if command -v docker >/dev/null 2>&1 && docker --version >/dev/null 2>&1; then
+    info "docker already installed: $(docker --version)"
+  else
+    # Install via Docker's official apt repo (NOT Ubuntu's docker.io, which lags
+    # the upstream and omits the compose plugin we want).
+    sudo install -m 0755 -d /etc/apt/keyrings
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+      | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+    sudo chmod a+r /etc/apt/keyrings/docker.gpg
+    UBUNTU_CODENAME=$(. /etc/os-release && echo "${VERSION_CODENAME:-${UBUNTU_CODENAME:-}}")
+    if [[ -z "$UBUNTU_CODENAME" ]]; then
+      step_fail "docker" "could not determine Ubuntu codename from /etc/os-release"
+      exit 1
+    fi
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $UBUNTU_CODENAME stable" \
+      | sudo tee /etc/apt/sources.list.d/docker.list >/dev/null
+    sudo apt-get update -qq
+    sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    info "Installed: $(docker --version)"
+  fi
+
+  # Add current user to docker group (idempotent — usermod -a is a no-op if already a member).
+  if id -nG "$USER" | tr ' ' '\n' | grep -Fxq docker; then
+    info "User $USER already in docker group"
+  else
+    sudo usermod -aG docker "$USER"
+    info "${C_YELLOW}Added $USER to docker group. Run 'newgrp docker' (or log out + back in) to use docker without sudo.${C_RESET}"
+  fi
+
+  # Enable + start the service. On a fresh WSL distro where /etc/wsl.conf was
+  # written THIS run, systemd is not yet active (no /run/systemd/system) — the
+  # service will start automatically after the user runs 'wsl --shutdown'.
+  if [[ -d /run/systemd/system ]]; then
+    sudo systemctl enable --now docker
+    info "Docker service enabled and started."
+  else
+    sudo systemctl enable docker 2>/dev/null || true
+    info "${C_YELLOW}systemd not yet active (this is normal on a freshly-configured WSL distro).${C_RESET}"
+    info "${C_YELLOW}Run 'wsl --shutdown' from PowerShell to apply /etc/wsl.conf; Docker will auto-start next boot.${C_RESET}"
+  fi
+
+  step_done "docker"
+fi
+
 # ─── [marketplace] Register marketplace + install itc-base ─────────────────────
 
 step_start "marketplace" "Registering itc-claude-marketplace + installing itc-base"
@@ -658,6 +712,9 @@ if [[ "$ITC_BASE_INSTALLED" == "y" ]]; then
   info "Plugin: itc-base (installed)"
 else
   info "Plugin: itc-base ${C_YELLOW}(not yet available — layer-2 work)${C_RESET}"
+fi
+if [[ "$WANT_DOCKER" == "y" ]]; then
+  info "Docker: $(docker --version 2>/dev/null || echo 'installed')"
 fi
 echo
 
