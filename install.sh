@@ -210,7 +210,10 @@ case "${_itc_reply,,}" in
   ""|y|yes)
     _itc_cleanup
     printf 'Running phase 2...\n\n'
-    ITC_BOOTSTRAP_AUTO_RESUME=1 curl -fsSL "https://raw.githubusercontent.com/screpeau-itc/itc-bootstrap/main/install.sh?v=$(date +%s)" | bash
+    # Env-var prefix must be on `bash` (the pipeline's right-hand command that
+    # executes install.sh), NOT on `curl` (which doesn't read it). Without this,
+    # install.sh runs without ITC_BOOTSTRAP_AUTO_RESUME=1 and re-asks the prompts.
+    curl -fsSL "https://raw.githubusercontent.com/screpeau-itc/itc-bootstrap/main/install.sh?v=$(date +%s)" | ITC_BOOTSTRAP_AUTO_RESUME=1 bash
     ;;
   never)
     _itc_cleanup
@@ -837,7 +840,12 @@ if claude plugin marketplace list --json 2>/dev/null \
    | jq -e '.[] | select(.name == "itc-claude-marketplace")' >/dev/null; then
   info "Marketplace itc-claude-marketplace already registered"
 else
-  claude plugin marketplace add screpeau-itc/itc-claude-marketplace
+  # Use the HTTPS URL form (not the owner/repo short form). The short form makes
+  # claude attempt an SSH clone, which fails on fresh distros that don't yet have
+  # github.com's host key in ~/.ssh/known_hosts. HTTPS is unauthenticated for
+  # this public repo and avoids the issue entirely. (Claude's error message
+  # explicitly recommends this when the SSH form fails.)
+  claude plugin marketplace add https://github.com/screpeau-itc/itc-claude-marketplace
 fi
 
 # Install itc-base. Until the layer-2 batch creates this plugin, the install
