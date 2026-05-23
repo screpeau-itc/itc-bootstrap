@@ -257,6 +257,7 @@ EOF
       info "Backed up existing /etc/wsl.conf to $BACKUP"
     fi
     echo "$WSL_CONF_NEW" | sudo tee /etc/wsl.conf > /dev/null
+    WSL_CONF_WAS_WRITTEN=y
     step_done "wsl-conf"
     info "${C_YELLOW}Run 'wsl --shutdown' from Windows PowerShell after this script finishes to pick up the new config.${C_RESET}"
   fi
@@ -681,6 +682,7 @@ if [[ "$WANT_DOCKER" == "y" ]]; then
     sudo apt-get update -qq
     sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
     info "Installed: $(docker --version)"
+    DOCKER_WAS_INSTALLED=y
   fi
 
   # Add current user to docker group (idempotent — usermod -a is a no-op if already a member).
