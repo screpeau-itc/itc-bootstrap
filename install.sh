@@ -609,14 +609,21 @@ info "Node: $(node --version), npm: $(npm --version)"
 
 step_start "claude-cli" "Installing Claude Code CLI"
 
-# Fast path: skip install + interactive auth pause entirely IFF claude is
-# installed AT THE RIGHT LOCATION (~/.local/bin) AND already authed. Probe auth
-# via `claude mcp list` which requires a valid token (in 2.1.x there's no
-# `claude auth status` command). Claude at any other path (e.g. /usr/bin from
-# an old `sudo npm install -g`) drops into the install branch so we can
-# replace it with the native installer.
+# v0.4.8: probe auth via `claude auth status --json | jq -e .loggedIn`. The
+# previous check used `claude mcp list`, which succeeded WITHOUT auth (it
+# only reads local settings.json, never contacts Anthropic). That made the
+# fast path falsely report "authenticated" on fresh installs, skipping the
+# interactive auth prompt — operator landed at the [handoff] exec with an
+# unauthenticated claude that immediately printed "Not logged in".
+#
+# `claude auth status --json` returns {"loggedIn": true|false, ...} and
+# exits 0 in both cases (success means the command ran, not that auth was
+# OK), so we MUST grep/jq the JSON rather than rely on exit code.
+#
+# Claude at any other path (e.g. /usr/bin from an old `sudo npm install -g`)
+# drops into the install branch so we can replace it with the native installer.
 if [[ "$(command -v claude 2>/dev/null)" == "$HOME/.local/bin/claude" ]] \
-   && claude mcp list >/dev/null 2>&1; then
+   && claude auth status --json 2>/dev/null | jq -e '.loggedIn == true' >/dev/null 2>&1; then
   step_skip "claude-cli" "claude $(claude --version) already installed and authenticated"
 else
   # Install or migrate to Anthropic's official native installer (NOT npm).
@@ -655,7 +662,9 @@ else
 
   # Whether we just installed or migrated, check auth before prompting.
   # Auth state is preserved across the migration (~/.claude.json untouched).
-  if claude mcp list >/dev/null 2>&1; then
+  # v0.4.8: use `claude auth status` (real auth probe), not `claude mcp list`
+  # (local-only, doesn't verify auth).
+  if claude auth status --json 2>/dev/null | jq -e '.loggedIn == true' >/dev/null 2>&1; then
     step_done "claude-cli"
   else
     echo
@@ -670,7 +679,7 @@ else
       AUTH_TRIES=$((AUTH_TRIES + 1))
       ask_yes_no "Have you completed Claude Code authentication?" "y" CONFIRM
       if [[ "$CONFIRM" == "y" ]]; then
-        if claude mcp list >/dev/null 2>&1; then
+        if claude auth status --json 2>/dev/null | jq -e '.loggedIn == true' >/dev/null 2>&1; then
           step_done "claude-cli"
           break
         else
