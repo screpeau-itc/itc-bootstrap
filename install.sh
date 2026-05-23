@@ -406,9 +406,17 @@ chmod 600 "$_ITC_PREFS"
 # so subsequent sudos don't prompt. Operator is asked once for their password
 # (sudo -v) and the sudoers.d entry is written. Idempotent — re-running on a
 # machine that already has the entry is a no-op.
+#
+# v0.4.9: the "already configured?" probe must check the actual sudoers policy
+# (NOPASSWD: ALL via `sudo -n -l`), NOT `sudo -n true`. The latter passes if
+# sudo credentials are merely *cached* in the timestamp (e.g., operator just
+# ran `sudo apt install curl` before `curl | bash`), giving a false positive
+# that skips writing the sudoers.d file in phase 1 — and then phase 2 catches
+# the missing policy, configures it for real, and prompts for the password.
+# Same NOPASSWD check used at PWLESS_ALREADY_ACTIVE earlier.
 if [[ "$WANT_PASSWORDLESS_SUDO" == "y" ]]; then
   PWLESS_FILE="/etc/sudoers.d/itc-bootstrap-$USER"
-  if sudo -n true 2>/dev/null; then
+  if sudo -n -l 2>/dev/null | grep -qE 'NOPASSWD.*ALL'; then
     info "Passwordless sudo already active for $USER — skipping setup."
   else
     info "Configuring passwordless sudo for $USER (you will be prompted for your password ONCE)..."
@@ -551,7 +559,6 @@ if [[ ! -f "$CLAUDE_CONFIG" ]]; then
 }
 EOF
   chmod 600 "$CLAUDE_CONFIG"
-  step_done "claude-trust"
 else
   # File exists — merge using jq. Sets onboarding flags only if not already set
   # (// operator preserves operator-customized values).
@@ -567,13 +574,50 @@ else
   if jq -e . "$TMP" >/dev/null 2>&1; then
     mv "$TMP" "$CLAUDE_CONFIG"
     chmod 600 "$CLAUDE_CONFIG"
-    step_done "claude-trust"
   else
     rm -f "$TMP"
     step_fail "claude-trust" "merged config is invalid JSON; original ~/.claude.json untouched"
     exit 1
   fi
 fi
+
+# v0.4.9: also pre-stage ~/.claude/settings.json with a permissions.allow rule
+# for the wizard's stage-1 script. The /itc-base:itc-base-setup slash command
+# body invokes `bash itc-base-stage1.sh`, which triggers claude's permission
+# gate (even when permissions.defaultMode is bypassPermissions — that mode
+# doesn't suppress bash invocations from slash-command bodies on a cold first
+# launch). Pre-allowing it makes the wizard fully hands-off.
+CLAUDE_SETTINGS_DIR="$HOME/.claude"
+CLAUDE_SETTINGS="$CLAUDE_SETTINGS_DIR/settings.json"
+STAGE1_RULE='Bash(bash itc-base-stage1.sh:*)'
+
+mkdir -p "$CLAUDE_SETTINGS_DIR"
+if [[ ! -f "$CLAUDE_SETTINGS" ]]; then
+  cat > "$CLAUDE_SETTINGS" <<EOF
+{
+  "permissions": {
+    "allow": ["$STAGE1_RULE"]
+  }
+}
+EOF
+  chmod 600 "$CLAUDE_SETTINGS"
+else
+  TMP=$(mktemp)
+  jq --arg rule "$STAGE1_RULE" \
+     '.permissions = (.permissions // {})
+      | .permissions.allow = ((.permissions.allow // []) + [$rule] | unique)' \
+     "$CLAUDE_SETTINGS" > "$TMP"
+  if jq -e . "$TMP" >/dev/null 2>&1; then
+    mv "$TMP" "$CLAUDE_SETTINGS"
+    chmod 600 "$CLAUDE_SETTINGS"
+  else
+    rm -f "$TMP"
+    step_fail "claude-trust" "merged settings.json is invalid JSON; original untouched"
+    exit 1
+  fi
+fi
+
+step_done "claude-trust"
 
 # ─── [shell-comfort] Sensible bashrc defaults ─────────────────────────────────
 
@@ -669,29 +713,26 @@ else
   else
     echo
     info "${C_BOLD}Claude Code first-run authentication${C_RESET}"
-    info "If not already authenticated, run this in another terminal NOW:"
-    info "  ${C_BLUE}claude${C_RESET}    (it will open a browser tab for Anthropic login)"
-    info "Once you see the welcome prompt in that other terminal, return here."
+    info "About to launch ${C_BLUE}claude${C_RESET} inline — a browser tab will open for Anthropic OAuth."
+    info "After signing in and seeing claude's welcome prompt, type ${C_BOLD}/exit${C_RESET} (or Ctrl-D)"
+    info "to return here and continue the install."
+    echo
+    sleep 2
+
+    # v0.4.9: run claude inline rather than telling the operator to open a
+    # second terminal. /dev/tty stdin keeps the OAuth flow interactive even
+    # though the script itself is in a `curl | bash` pipeline. /exit returns
+    # nonzero — ignore it so the script continues to the auth-check below.
+    claude < /dev/tty || true
     echo
 
-    AUTH_TRIES=0
-    while [[ $AUTH_TRIES -lt 3 ]]; do
-      AUTH_TRIES=$((AUTH_TRIES + 1))
-      ask_yes_no "Have you completed Claude Code authentication?" "y" CONFIRM
-      if [[ "$CONFIRM" == "y" ]]; then
-        if claude auth status --json 2>/dev/null | jq -e '.loggedIn == true' >/dev/null 2>&1; then
-          step_done "claude-cli"
-          break
-        else
-          info "${C_YELLOW}Claude CLI is not responding as authenticated. Try running 'claude' again to complete login.${C_RESET}"
-        fi
-      fi
-      if [[ $AUTH_TRIES -ge 3 ]]; then
-        step_fail "claude-cli" "auth not detected after 3 attempts"
-        info "Run 'claude' manually to complete auth, then re-run this installer to resume."
-        exit 1
-      fi
-    done
+    if claude auth status --json 2>/dev/null | jq -e '.loggedIn == true' >/dev/null 2>&1; then
+      step_done "claude-cli"
+    else
+      step_fail "claude-cli" "auth not detected after inline login attempt"
+      info "Run 'claude' manually to complete auth, then re-run this installer to resume."
+      exit 1
+    fi
   fi
 fi
 
@@ -1087,17 +1128,29 @@ info "Launching Claude session in your workspace..."
 sleep 2
 
 cd "$WORKSPACE_DIR"
-# Replace this shell with claude. Two stdin-related details matter here:
-#   1) Redirect stdin to /dev/tty — under `curl ... | bash`, bash's stdin
-#      is the script pipe. Without redirection claude would inherit it and
-#      consume the post-exec lines of install.sh as input (observed in T18).
-#   2) The trailing line of install.sh is this exec — nothing after — so
+# Replace this shell with claude. Three FD details matter here:
+#   1) stdin → /dev/tty: under `curl ... | bash`, bash's stdin is the script
+#      pipe. Without redirection claude would inherit it and consume any
+#      remaining bytes of install.sh as input (observed in T18).
+#   2) stdout/stderr → /dev/tty: v0.4.6's auto-logging did `exec > >(tee ...)`
+#      at the top of the script, so by this point fds 1 and 2 are pointed at
+#      the tee subprocess pipe — NOT the operator's terminal directly.
+#      claude inherits those tee'd FDs after exec, which (a) sends claude's
+#      TUI through tee on its way to the terminal and (b) keeps tee alive as
+#      an orphan until claude exits. That tee-attached state has been linked
+#      to terminal-session teardown weirdness on /exit (operator dropping to
+#      PowerShell instead of bash). Reattaching FDs directly to /dev/tty
+#      here breaks the tee dependency and gives claude a clean attach.
+#      The install log stops capturing at this point — acceptable, since
+#      anything post-handoff is claude's own session, not install diagnostics.
+#   3) The trailing line of install.sh is this exec — nothing after — so
 #      even if a future edit forgets (1), there's no bash code left to leak.
 # Only pass the slash command if the plugin actually installed; otherwise launch
 # bare claude so the user doesn't land on an "Unknown command" prompt.
 # Initial prompt as positional argument matches claude CLI 2.1.x convention.
 # v0.4.4: slash command requires the plugin namespace prefix (/itc-base:itc-base-setup)
 # — the bare /itc-base-setup form returns "Unknown command".
+exec > /dev/tty 2>/dev/tty
 if [[ "$ITC_BASE_INSTALLED" == "y" ]]; then
   exec claude "/itc-base:itc-base-setup" < /dev/tty
 else
