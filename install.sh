@@ -303,7 +303,22 @@ if [[ "${ITC_BOOTSTRAP_AUTO_RESUME:-}" == "1" && -f "$_ITC_PREFS" ]]; then
 else
   ask_yes_no       "Enable inbound SSH on this host (so you can SSH in from another machine)?" \
                    "${INBOUND_SSH:-$DEFAULT_INBOUND_SSH}" INBOUND_SSH
-  ask_yes_no       "Install Docker (docker-ce + compose plugin)?" "${WANT_DOCKER:-y}" WANT_DOCKER
+
+  # v0.4.3: gate the Docker prompt by environment.
+  #   docker: installing Docker inside Docker is special-cased (DinD) and not
+  #           appropriate for an end-user dev environment.
+  #   lxc:    unprivileged containers can't run Docker; privileged need host config.
+  # For both, skip the prompt entirely and force WANT_DOCKER=n.
+  case "$ENV_TYPE" in
+    docker|lxc)
+      WANT_DOCKER=n
+      info "Container environment ($ENV_TYPE) detected — skipping Docker prompt (Docker setup is N/A here)."
+      ;;
+    *)
+      ask_yes_no   "Install Docker (docker-ce + compose plugin)?" "${WANT_DOCKER:-y}" WANT_DOCKER
+      ;;
+  esac
+
   ask_yes_no       "Set up passwordless sudo for $USER (recommended for unattended install)?" \
                    "${WANT_PASSWORDLESS_SUDO:-y}" WANT_PASSWORDLESS_SUDO
 fi
