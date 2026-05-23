@@ -457,11 +457,21 @@ CLAUDE_CONFIG="$HOME/.claude.json"
 #     → suppresses claude's auto-marketplace prompt (itc-base's stage-1 installs
 #       plugins explicitly, so claude's auto-install doesn't need to fire)
 #
-# Capture claude version for lastOnboardingVersion. Falls back to '2.1.0'
-# if claude --version isn't on PATH yet (shouldn't happen — claude install
-# is earlier in phase 1).
-CLAUDE_VERSION=$(claude --version 2>/dev/null | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+' | head -1)
-CLAUDE_VERSION="${CLAUDE_VERSION:-2.1.0}"
+# v0.4.5: capture claude version for lastOnboardingVersion if available, but
+# DO NOT call claude --version unconditionally — [claude-trust] runs at line
+# 443 and the [claude-cli] install step doesn't run until line 538. Calling
+# a not-yet-installed binary in a pipe under `set -euo pipefail` causes the
+# script to exit silently (pipefail catches the 127, errexit ends the script
+# without printing the failing step name).
+#
+# Use a high fallback version so claude treats this machine as "already
+# onboarded to all known versions" until the operator opens claude for real.
+CLAUDE_VERSION="99.99.99"
+if command -v claude >/dev/null 2>&1; then
+  # claude is on PATH (re-run case, not first install) — use real version
+  DETECTED=$(claude --version 2>/dev/null | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)
+  [[ -n "$DETECTED" ]] && CLAUDE_VERSION="$DETECTED"
+fi
 
 # If file doesn't exist, create it with our trust entry + onboarding skip flags
 if [[ ! -f "$CLAUDE_CONFIG" ]]; then
