@@ -28,7 +28,7 @@ The installer asks two questions upfront (inbound SSH, install Docker), then run
 ## What the installer does
 
 1. **Detects** distro (Ubuntu/Debian only — bails on others with manual-mode pointer) and environment (WSL, Docker, LXC, VM, native).
-2. **Asks** two quick questions: enable inbound SSH (default Yes on WSL/Docker/LXC/VM, No on native), install Docker (default Yes). (v0.4.0+: workspace-name prompt removed — the admin workspace dir is now always `~/dev/itx-claude-admin/`.)
+2. **Asks** three quick questions: enable inbound SSH (default Yes on WSL/Docker/LXC/VM, No on native), install Docker (default Yes), set up passwordless sudo (default Yes — recommended for unattended install; writes `/etc/sudoers.d/itc-bootstrap-<your-user>`). (v0.4.0+: workspace-name prompt removed — the admin workspace dir is now always `~/dev/itx-claude-admin/`. v0.4.2+: passwordless sudo prompt added.)
 3. **Installs base packages**: `build-essential git ca-certificates gnupg lsb-release jq tmux unzip python3-pip python3-venv pipx`.
 4. **Writes `/etc/wsl.conf`** (WSL only): enables systemd, sets default user, mounts `/mnt/c` **read-only** (Windows files visible but not writable from WSL), disables Windows PATH inheritance.
 5. **Creates the admin workspace directory** at `~/dev/itx-claude-admin/`.

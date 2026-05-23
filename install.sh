@@ -299,10 +299,13 @@ if [[ "${ITC_BOOTSTRAP_AUTO_RESUME:-}" == "1" && -f "$_ITC_PREFS" ]]; then
   # Defensive fallbacks in case prefs file is partial
   : "${INBOUND_SSH:=$DEFAULT_INBOUND_SSH}"
   : "${WANT_DOCKER:=y}"
+  : "${WANT_PASSWORDLESS_SUDO:=n}"
 else
   ask_yes_no       "Enable inbound SSH on this host (so you can SSH in from another machine)?" \
                    "${INBOUND_SSH:-$DEFAULT_INBOUND_SSH}" INBOUND_SSH
   ask_yes_no       "Install Docker (docker-ce + compose plugin)?" "${WANT_DOCKER:-y}" WANT_DOCKER
+  ask_yes_no       "Set up passwordless sudo for $USER (recommended for unattended install)?" \
+                   "${WANT_PASSWORDLESS_SUDO:-y}" WANT_PASSWORDLESS_SUDO
 fi
 
 # v0.4.0: admin workspace dir is now fixed. /itc-base-setup (itc-base plugin)
@@ -318,13 +321,32 @@ cat > "$_ITC_PREFS" <<EOF
 # Safe to delete; will be regenerated.
 INBOUND_SSH=$INBOUND_SSH
 WANT_DOCKER=$WANT_DOCKER
+WANT_PASSWORDLESS_SUDO=$WANT_PASSWORDLESS_SUDO
 EOF
 chmod 600 "$_ITC_PREFS"
 
+# v0.4.2: passwordless sudo setup BEFORE any sudo command runs in the install,
+# so subsequent sudos don't prompt. Operator is asked once for their password
+# (sudo -v) and the sudoers.d entry is written. Idempotent — re-running on a
+# machine that already has the entry is a no-op.
+if [[ "$WANT_PASSWORDLESS_SUDO" == "y" ]]; then
+  PWLESS_FILE="/etc/sudoers.d/itc-bootstrap-$USER"
+  if sudo -n true 2>/dev/null; then
+    info "Passwordless sudo already active for $USER — skipping setup."
+  else
+    info "Configuring passwordless sudo for $USER (you will be prompted for your password ONCE)..."
+    sudo -v
+    echo "$USER ALL=(ALL) NOPASSWD:ALL" | sudo tee "$PWLESS_FILE" > /dev/null
+    sudo chmod 0440 "$PWLESS_FILE"
+    info "Passwordless sudo configured. Remove with: sudo rm $PWLESS_FILE"
+  fi
+fi
+
 echo
-info "Will use workspace: $WORKSPACE_DIR"
-info "Inbound SSH:        $([[ "$INBOUND_SSH" == "y" ]] && echo "enabled" || echo "disabled")"
-info "Docker:             $([[ "$WANT_DOCKER" == "y" ]] && echo "install"  || echo "skip")"
+info "Will use workspace:  $WORKSPACE_DIR"
+info "Inbound SSH:         $([[ "$INBOUND_SSH" == "y" ]] && echo "enabled" || echo "disabled")"
+info "Docker:              $([[ "$WANT_DOCKER" == "y" ]] && echo "install"  || echo "skip")"
+info "Passwordless sudo:   $([[ "$WANT_PASSWORDLESS_SUDO" == "y" ]] && echo "configured" || echo "not configured (will prompt as needed)")"
 echo
 
 # ─── [base-pkgs] Base packages ─────────────────────────────────────────────────
