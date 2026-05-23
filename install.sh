@@ -300,19 +300,15 @@ if [[ "${ITC_BOOTSTRAP_AUTO_RESUME:-}" == "1" && -f "$_ITC_PREFS" ]]; then
   : "${INBOUND_SSH:=$DEFAULT_INBOUND_SSH}"
   : "${WANT_DOCKER:=y}"
 else
-  ask_with_default "Workspace folder name (under ~/dev)" "${WORKSPACE_NAME:-itx-default-code}" WORKSPACE_NAME
   ask_yes_no       "Enable inbound SSH on this host (so you can SSH in from another machine)?" \
                    "${INBOUND_SSH:-$DEFAULT_INBOUND_SSH}" INBOUND_SSH
   ask_yes_no       "Install Docker (docker-ce + compose plugin)?" "${WANT_DOCKER:-y}" WANT_DOCKER
 fi
 
-# Folder name sanity: no slashes, no leading dot, non-empty
-if [[ -z "$WORKSPACE_NAME" || "$WORKSPACE_NAME" == .* || "$WORKSPACE_NAME" == */* ]]; then
-  step_fail "prompts" "invalid workspace name '$WORKSPACE_NAME' (must be non-empty, no slashes, no leading dot)"
-  exit 1
-fi
-
-WORKSPACE_DIR="$HOME/dev/$WORKSPACE_NAME"
+# v0.4.0: admin workspace dir is now fixed. /itc-base-setup (itc-base plugin)
+# turns this into a "system admin workspace"; project work happens in
+# separate dirs created by future /itc-workspace-new (itc-base v0.2.0+).
+WORKSPACE_DIR="$HOME/dev/itx-claude-admin"
 
 # Persist preferences IMMEDIATELY (before any install work runs). If the user
 # Ctrl-C's mid-install, their answers survive for the next attempt.
@@ -320,7 +316,6 @@ mkdir -p "$(dirname "$_ITC_PREFS")"
 cat > "$_ITC_PREFS" <<EOF
 # itc-bootstrap remembered preferences — used as defaults on next run.
 # Safe to delete; will be regenerated.
-WORKSPACE_NAME=$WORKSPACE_NAME
 INBOUND_SSH=$INBOUND_SSH
 WANT_DOCKER=$WANT_DOCKER
 EOF
