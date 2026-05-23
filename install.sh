@@ -40,6 +40,25 @@ if [[ $EUID -eq 0 ]]; then
   exit 1
 fi
 
+# Phase-2-pending guard: refuse to proceed if phase 1 already finished but
+# phase 2 hasn't run yet. Without this, a manual install.sh re-run before
+# `wsl --shutdown` would defeat the phase-split design (handoff would land
+# in a still-stale shell, missing systemd / docker-group / PATH activations).
+#
+# The Y path of resume.sh removes resume.sh BEFORE re-curling install.sh,
+# so phase 2 (auto-resume) passes this guard cleanly.
+if [[ -f "$HOME/.local/share/itc-bootstrap/resume.sh" ]]; then
+  info "Phase 1 has already completed; phase 2 is pending."
+  info "Restart WSL to finish setup:"
+  info "  1) exit"
+  info "  2) From PowerShell:  wsl --shutdown && wsl"
+  info "(Your next bash login will prompt to finish.)"
+  echo
+  info "Or to discard the pending phase 2 and run the installer fresh:"
+  info "  rm $HOME/.local/share/itc-bootstrap/resume.sh"
+  exit 0
+fi
+
 # Ensure ~/.local/bin is on PATH for the duration of this script. We're invoked
 # via `curl ... | bash`, which is non-interactive — bash skips ~/.bashrc, so
 # even though the claude native installer added the export there, this shell
