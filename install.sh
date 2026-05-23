@@ -835,6 +835,15 @@ fi
 
 step_start "marketplace" "Registering itc-claude-marketplace + installing itc-base"
 
+# Configure git's credential helper to use gh's token for HTTPS GitHub
+# operations. Required for the HTTPS clone below: even public repos now
+# refuse unauthenticated HTTPS clones (GitHub asks for username; with
+# terminal prompts disabled in a piped-bash context, the clone bails).
+# `gh auth setup-git` is idempotent — safe to re-run on already-configured
+# systems. Errors are non-fatal because gh might not yet be authed in
+# unusual states.
+gh auth setup-git --hostname github.com 2>/dev/null || true
+
 # Add marketplace (idempotent: claude reports an error but doesn't break if already added)
 if claude plugin marketplace list --json 2>/dev/null \
    | jq -e '.[] | select(.name == "itc-claude-marketplace")' >/dev/null; then
@@ -842,9 +851,8 @@ if claude plugin marketplace list --json 2>/dev/null \
 else
   # Use the HTTPS URL form (not the owner/repo short form). The short form makes
   # claude attempt an SSH clone, which fails on fresh distros that don't yet have
-  # github.com's host key in ~/.ssh/known_hosts. HTTPS is unauthenticated for
-  # this public repo and avoids the issue entirely. (Claude's error message
-  # explicitly recommends this when the SSH form fails.)
+  # github.com's host key in ~/.ssh/known_hosts. HTTPS via gh credential helper
+  # (configured above) authenticates without SSH known_hosts setup.
   claude plugin marketplace add https://github.com/screpeau-itc/itc-claude-marketplace
 fi
 
