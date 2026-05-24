@@ -713,25 +713,32 @@ else
   else
     echo
     info "${C_BOLD}Claude Code first-run authentication${C_RESET}"
-    info "About to launch ${C_BLUE}claude${C_RESET} inline — a browser tab will open for Anthropic OAuth."
-    info "After signing in and seeing claude's welcome prompt, type ${C_BOLD}/exit${C_RESET} (or Ctrl-D)"
-    info "to return here and continue the install."
+    info "Launching bare ${C_BLUE}claude${C_RESET} in ${C_BOLD}$WORKSPACE_DIR${C_RESET}."
+    info "Follow claude's on-screen instructions to complete Anthropic OAuth."
+    info "When done, type ${C_BOLD}/exit${C_RESET} (or Ctrl-D) to return here and continue."
     echo
     sleep 2
 
-    # v0.4.9: run claude inline rather than telling the operator to open a
-    # second terminal. /dev/tty stdin keeps the OAuth flow interactive even
-    # though the script itself is in a `curl | bash` pipeline. /exit returns
-    # nonzero — ignore it so the script continues to the auth-check below.
-    claude < /dev/tty || true
+    # v0.4.10: run bare `claude` (no slash command, no flags) in the workspace
+    # dir for first-run auth. Two FD details:
+    #   1) stdin/stdout/stderr are ALL redirected directly to /dev/tty for
+    #      this invocation. This bypasses v0.4.6's auto-log tee subprocess,
+    #      giving claude a clean direct-terminal attach for OAuth (no tee in
+    #      the path → no broken-pipe / SIGPIPE risk on claude's stdout).
+    #   2) Subshell keeps the cd local — the rest of the script doesn't need
+    #      to cd back. /exit returns nonzero; the `|| true` ignores it.
+    # Re-check auth afterwards but do NOT kill the script if still unauthed —
+    # the operator may complete OAuth in another terminal, or the handoff
+    # exec will surface the issue more cleanly than an `exit 1` here.
+    ( cd "$WORKSPACE_DIR" && claude < /dev/tty > /dev/tty 2>/dev/tty ) || true
     echo
 
     if claude auth status --json 2>/dev/null | jq -e '.loggedIn == true' >/dev/null 2>&1; then
       step_done "claude-cli"
     else
-      step_fail "claude-cli" "auth not detected after inline login attempt"
-      info "Run 'claude' manually to complete auth, then re-run this installer to resume."
-      exit 1
+      info "${C_YELLOW}claude auth not yet detected — continuing anyway.${C_RESET}"
+      info "${C_YELLOW}If OAuth didn't complete, run 'claude' from another terminal to finish before the handoff.${C_RESET}"
+      step_skip "claude-cli" "auth not confirmed; operator may need to retry"
     fi
   fi
 fi
