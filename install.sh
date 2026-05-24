@@ -581,31 +581,49 @@ else
   fi
 fi
 
-# v0.4.9: also pre-stage ~/.claude/settings.json with a permissions.allow rule
-# for the wizard's stage-1 script. The /itc-base:itc-base-setup slash command
-# body invokes `bash itc-base-stage1.sh`, which triggers claude's permission
-# gate (even when permissions.defaultMode is bypassPermissions — that mode
-# doesn't suppress bash invocations from slash-command bodies on a cold first
-# launch). Pre-allowing it makes the wizard fully hands-off.
+# v0.4.9 / v0.4.11: pre-stage ~/.claude/settings.json with permissions.allow
+# rules for ALL bash commands the itc-base wizard invokes. Without these, the
+# wizard hits claude's permission gate at every bash call — even when
+# permissions.defaultMode is bypassPermissions (that mode doesn't suppress
+# bash invocations from slash-command bodies on a cold first launch).
+#
+# Enumerated from plugins/itc-base/commands/itc-base-setup.md stage-1 + each
+# stage-2 step (model/git/perm-mode/remote-control/picker-plugins/review).
+# Keep this list in sync if the wizard adds new commands.
 CLAUDE_SETTINGS_DIR="$HOME/.claude"
 CLAUDE_SETTINGS="$CLAUDE_SETTINGS_DIR/settings.json"
-STAGE1_RULE='Bash(bash itc-base-stage1.sh:*)'
+WIZARD_RULES=(
+  'Bash(bash itc-base-stage1.sh:*)'
+  'Bash(jq:*)'
+  'Bash(mktemp:*)'
+  'Bash(mv:*)'
+  'Bash(cat:*)'
+  'Bash(grep:*)'
+  'Bash(echo:*)'
+  'Bash(printf:*)'
+  'Bash(tee:*)'
+  'Bash(test:*)'
+  'Bash(git config --global user.name:*)'
+  'Bash(git config --global user.email:*)'
+  'Bash(gh api user:*)'
+  'Bash(command -v:*)'
+  'Bash(dirname:*)'
+  'Bash(claude plugin install:*)'
+  'Bash(claude plugin marketplace add:*)'
+)
+# Pack array into a JSON array for jq.
+WIZARD_RULES_JSON=$(printf '%s\n' "${WIZARD_RULES[@]}" | jq -R . | jq -s .)
 
 mkdir -p "$CLAUDE_SETTINGS_DIR"
 if [[ ! -f "$CLAUDE_SETTINGS" ]]; then
-  cat > "$CLAUDE_SETTINGS" <<EOF
-{
-  "permissions": {
-    "allow": ["$STAGE1_RULE"]
-  }
-}
-EOF
+  jq -n --argjson rules "$WIZARD_RULES_JSON" \
+     '{permissions: {allow: $rules}}' > "$CLAUDE_SETTINGS"
   chmod 600 "$CLAUDE_SETTINGS"
 else
   TMP=$(mktemp)
-  jq --arg rule "$STAGE1_RULE" \
+  jq --argjson rules "$WIZARD_RULES_JSON" \
      '.permissions = (.permissions // {})
-      | .permissions.allow = ((.permissions.allow // []) + [$rule] | unique)' \
+      | .permissions.allow = ((.permissions.allow // []) + $rules | unique)' \
      "$CLAUDE_SETTINGS" > "$TMP"
   if jq -e . "$TMP" >/dev/null 2>&1; then
     mv "$TMP" "$CLAUDE_SETTINGS"
@@ -711,35 +729,58 @@ else
   if claude auth status --json 2>/dev/null | jq -e '.loggedIn == true' >/dev/null 2>&1; then
     step_done "claude-cli"
   else
-    echo
-    info "${C_BOLD}Claude Code first-run authentication${C_RESET}"
-    info "Launching bare ${C_BLUE}claude${C_RESET} in ${C_BOLD}$WORKSPACE_DIR${C_RESET}."
-    info "Follow claude's on-screen instructions to complete Anthropic OAuth."
-    info "When done, type ${C_BOLD}/exit${C_RESET} (or Ctrl-D) to return here and continue."
-    echo
-    sleep 2
+    # v0.4.11: auth loop with explicit banner + retry-on-failure prompt.
+    # Each iteration: show banner → run bare claude in workspace dir → check
+    # auth → if good, break; if not, ask operator to retry. On "no", print
+    # a warning banner and continue (do NOT kill the script — operator may
+    # have a reason to defer auth, e.g. completing OAuth from a different
+    # browser, or planning to finish at handoff).
+    while true; do
+      echo
+      cat <<EOF
+${C_BLUE}${C_BOLD}═══════════════════════════════════════════════════════════════${C_RESET}
+${C_BLUE}${C_BOLD}  CLAUDE CODE AUTHENTICATION${C_RESET}
 
-    # v0.4.10: run bare `claude` (no slash command, no flags) in the workspace
-    # dir for first-run auth. Two FD details:
-    #   1) stdin/stdout/stderr are ALL redirected directly to /dev/tty for
-    #      this invocation. This bypasses v0.4.6's auto-log tee subprocess,
-    #      giving claude a clean direct-terminal attach for OAuth (no tee in
-    #      the path → no broken-pipe / SIGPIPE risk on claude's stdout).
-    #   2) Subshell keeps the cd local — the rest of the script doesn't need
-    #      to cd back. /exit returns nonzero; the `|| true` ignores it.
-    # Re-check auth afterwards but do NOT kill the script if still unauthed —
-    # the operator may complete OAuth in another terminal, or the handoff
-    # exec will surface the issue more cleanly than an `exit 1` here.
-    ( cd "$WORKSPACE_DIR" && claude < /dev/tty > /dev/tty 2>/dev/tty ) || true
-    echo
+  When claude launches:
+    1. Type:  ${C_BOLD}/login${C_RESET}
+    2. Follow the prompts (browser will open for Anthropic OAuth)
+    3. Once logged in, type:  ${C_BOLD}/exit${C_RESET}  (or Ctrl-D) to continue
+${C_BLUE}${C_BOLD}═══════════════════════════════════════════════════════════════${C_RESET}
+EOF
+      echo
+      sleep 2
 
-    if claude auth status --json 2>/dev/null | jq -e '.loggedIn == true' >/dev/null 2>&1; then
-      step_done "claude-cli"
-    else
-      info "${C_YELLOW}claude auth not yet detected — continuing anyway.${C_RESET}"
-      info "${C_YELLOW}If OAuth didn't complete, run 'claude' from another terminal to finish before the handoff.${C_RESET}"
-      step_skip "claude-cli" "auth not confirmed; operator may need to retry"
-    fi
+      # FD details for the claude invocation:
+      #   - stdin/stdout/stderr all → /dev/tty for this invocation only.
+      #     Bypasses v0.4.6's auto-log tee subprocess so claude's TUI has a
+      #     clean direct-terminal attach for OAuth (no SIGPIPE risk).
+      #   - Subshell keeps the cd local — the rest of the script doesn't
+      #     need to cd back.
+      #   - /exit returns nonzero; `|| true` ignores it.
+      ( cd "$WORKSPACE_DIR" && claude < /dev/tty > /dev/tty 2>/dev/tty ) || true
+      echo
+
+      if claude auth status --json 2>/dev/null | jq -e '.loggedIn == true' >/dev/null 2>&1; then
+        step_done "claude-cli"
+        break
+      fi
+
+      ask_yes_no "Claude is not authenticated. Retry login?" "y" RETRY_AUTH
+      if [[ "$RETRY_AUTH" != "y" ]]; then
+        echo
+        cat <<EOF
+${C_YELLOW}${C_BOLD}⚠  ─────────────────────────────────────────────────────────${C_RESET}
+${C_YELLOW}${C_BOLD}   WARNING: Claude is NOT authenticated.${C_RESET}
+${C_YELLOW}   The install will continue, but the wizard handoff at the${C_RESET}
+${C_YELLOW}   end will likely fail. Complete OAuth manually with:${C_RESET}
+${C_YELLOW}      claude /login${C_RESET}
+${C_YELLOW}${C_BOLD}─────────────────────────────────────────────────────────${C_RESET}
+EOF
+        echo
+        step_skip "claude-cli" "auth declined; operator chose to continue without"
+        break
+      fi
+    done
   fi
 fi
 
@@ -1135,7 +1176,7 @@ info "Launching Claude session in your workspace..."
 sleep 2
 
 cd "$WORKSPACE_DIR"
-# Replace this shell with claude. Three FD details matter here:
+# FD details for the final handoff:
 #   1) stdin → /dev/tty: under `curl ... | bash`, bash's stdin is the script
 #      pipe. Without redirection claude would inherit it and consume any
 #      remaining bytes of install.sh as input (observed in T18).
@@ -1152,14 +1193,17 @@ cd "$WORKSPACE_DIR"
 #      anything post-handoff is claude's own session, not install diagnostics.
 #   3) The trailing line of install.sh is this exec — nothing after — so
 #      even if a future edit forgets (1), there's no bash code left to leak.
-# Only pass the slash command if the plugin actually installed; otherwise launch
-# bare claude so the user doesn't land on an "Unknown command" prompt.
-# Initial prompt as positional argument matches claude CLI 2.1.x convention.
-# v0.4.4: slash command requires the plugin namespace prefix (/itc-base:itc-base-setup)
-# — the bare /itc-base-setup form returns "Unknown command".
+#
+# v0.4.11: two-phase claude launch. After the wizard claude exits (operator
+# types /exit per the wizard's final step), launch a fresh bare claude
+# session. This second claude reloads ~/.claude/settings.json and the
+# operator lands in a session with all wizard-applied settings (model,
+# bypassPermissions, enabled picker plugins) active. Wrapped in `bash -c`
+# because exec can only replace with one command; we need two sequential
+# claude invocations. Both inherit /dev/tty stdin explicitly.
 exec > /dev/tty 2>/dev/tty
 if [[ "$ITC_BASE_INSTALLED" == "y" ]]; then
-  exec claude "/itc-base:itc-base-setup" < /dev/tty
+  exec bash -c "claude '/itc-base:itc-base-setup' < /dev/tty; echo; echo '${C_GREEN}${C_BOLD}═══ Wizard complete — launching fresh claude session... ═══${C_RESET}'; sleep 1; claude < /dev/tty"
 else
   info "${C_YELLOW}Launching bare claude — /itc-base:itc-base-setup will be available once the itc-base plugin ships.${C_RESET}"
   exec claude < /dev/tty
