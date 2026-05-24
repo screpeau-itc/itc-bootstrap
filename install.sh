@@ -615,15 +615,22 @@ WIZARD_RULES=(
 WIZARD_RULES_JSON=$(printf '%s\n' "${WIZARD_RULES[@]}" | jq -R . | jq -s .)
 
 mkdir -p "$CLAUDE_SETTINGS_DIR"
+# v0.4.12: also pre-stage `skipDangerousModePermissionPrompt: true`. Without
+# this, the second claude launch (post-wizard handoff) prompts "Are you sure
+# you want bypassPermissions mode?" because the wizard's step 2.3 just turned
+# it on. Setting this here means the operator confirms once (implicitly, by
+# running the install) instead of being asked again at next claude launch.
 if [[ ! -f "$CLAUDE_SETTINGS" ]]; then
   jq -n --argjson rules "$WIZARD_RULES_JSON" \
-     '{permissions: {allow: $rules}}' > "$CLAUDE_SETTINGS"
+     '{permissions: {allow: $rules}, skipDangerousModePermissionPrompt: true}' \
+     > "$CLAUDE_SETTINGS"
   chmod 600 "$CLAUDE_SETTINGS"
 else
   TMP=$(mktemp)
   jq --argjson rules "$WIZARD_RULES_JSON" \
      '.permissions = (.permissions // {})
-      | .permissions.allow = ((.permissions.allow // []) + $rules | unique)' \
+      | .permissions.allow = ((.permissions.allow // []) + $rules | unique)
+      | .skipDangerousModePermissionPrompt = true' \
      "$CLAUDE_SETTINGS" > "$TMP"
   if jq -e . "$TMP" >/dev/null 2>&1; then
     mv "$TMP" "$CLAUDE_SETTINGS"
