@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# itc-bootstrap — cold-start installer for Claude Code on Ubuntu/WSL
+# itx-bootstrap — cold-start installer for Claude Code on Ubuntu/WSL
 # See README.md for usage. Designed to be invoked via:
-#   curl -fsSL "https://raw.githubusercontent.com/screpeau-itc/itc-bootstrap/main/install.sh?v=$(date +%s)" | bash
+#   curl -fsSL "https://raw.githubusercontent.com/screpeau-itc/itx-bootstrap/main/install.sh?v=$(date +%s)" | bash
 #
-# Source: https://github.com/screpeau-itc/itc-bootstrap
+# Source: https://github.com/screpeau-itc/itx-bootstrap
 # License: MIT (see LICENSE)
 
 set -euo pipefail
@@ -31,7 +31,7 @@ prompt()     { printf '%s? %s%s ' "$C_BOLD" "$1" "$C_RESET"; }
 # Target distros (Ubuntu/Debian) always ship bash 5+; this guard is for
 # anyone who pastes the recipe on macOS (bash 3.2) or a stripped container.
 if (( BASH_VERSINFO[0] < 4 )); then
-  printf 'itc-bootstrap: requires bash 4 or newer (detected bash %s)\n' "$BASH_VERSION" >&2
+  printf 'itx-bootstrap: requires bash 4 or newer (detected bash %s)\n' "$BASH_VERSION" >&2
   exit 1
 fi
 
@@ -47,7 +47,7 @@ fi
 #
 # The Y path of resume.sh removes resume.sh BEFORE re-curling install.sh,
 # so phase 2 (auto-resume) passes this guard cleanly.
-if [[ -f "$HOME/.local/share/itc-bootstrap/resume.sh" ]]; then
+if [[ -f "$HOME/.local/share/itx-bootstrap/resume.sh" ]]; then
   info "Phase 1 has already completed; phase 2 is pending."
   info "Restart WSL to finish setup:"
   info "  1) exit"
@@ -57,7 +57,7 @@ if [[ -f "$HOME/.local/share/itc-bootstrap/resume.sh" ]]; then
   info "(Your next bash login will prompt to finish.)"
   echo
   info "Or to discard the pending phase 2 and run the installer fresh:"
-  info "  rm $HOME/.local/share/itc-bootstrap/resume.sh"
+  info "  rm $HOME/.local/share/itx-bootstrap/resume.sh"
   exit 0
 fi
 
@@ -71,17 +71,17 @@ export PATH="$HOME/.local/bin:$PATH"
 
 # ─── Auto-logging (v0.4.6) ─────────────────────────────────────────────────────
 # Capture all script output to a timestamped log file under
-# ~/.local/share/itc-bootstrap/logs/. Helps debug install issues without the
+# ~/.local/share/itx-bootstrap/logs/. Helps debug install issues without the
 # operator having to remember `tee` redirects. Both phase 1 and phase 2 (auto-
 # resume) get their own log files. Log path is printed at start and end of run.
 
-ITC_LOG_DIR="$HOME/.local/share/itc-bootstrap/logs"
+ITC_LOG_DIR="$HOME/.local/share/itx-bootstrap/logs"
 mkdir -p "$ITC_LOG_DIR"
 ITC_LOG_FILE="$ITC_LOG_DIR/install-$(date +%Y%m%d-%H%M%S).log"
 
 # Seed the log with run metadata before we redirect.
 {
-  echo "=== itc-bootstrap install log ==="
+  echo "=== itx-bootstrap install log ==="
   echo "Started:  $(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "User:     $USER"
   echo "Hostname: $(hostname)"
@@ -100,11 +100,11 @@ exec > >(tee -a "$ITC_LOG_FILE") 2>&1
 # Trap EXIT so the operator sees the log path one last time when the script
 # ends — useful when a silent crash, manual interrupt, or exec-to-claude
 # happens and they want to see what was captured.
-_itc_print_log_path() {
+_itx_print_log_path() {
   printf '\n%sLog file (this run):%s %s\n' "$C_BLUE$C_BOLD" "$C_RESET" "$ITC_LOG_FILE" >/dev/tty 2>/dev/null || \
     printf '\nLog file (this run): %s\n' "$ITC_LOG_FILE"
 }
-trap _itc_print_log_path EXIT
+trap _itx_print_log_path EXIT
 
 # Announce log location at the top so it's visible early.
 printf '%sLog file:%s %s\n' "$C_BLUE$C_BOLD" "$C_RESET" "$ITC_LOG_FILE"
@@ -211,16 +211,16 @@ ask_yes_no() {
 }
 
 # Phase-1-end helper (used by the [phase-1-end] branch in Task 5).
-# Writes resume.sh into ~/.local/share/itc-bootstrap and appends a guarded
+# Writes resume.sh into ~/.local/share/itx-bootstrap and appends a guarded
 # snippet to ~/.bashrc that sources it on next interactive login.
 # Idempotent: re-writes resume.sh unconditionally (so updates ship); appends
 # the bashrc snippet only if its start-marker isn't already present.
 install_resume_artifacts() {
-  local resume_dir="$HOME/.local/share/itc-bootstrap"
+  local resume_dir="$HOME/.local/share/itx-bootstrap"
   local resume_path="$resume_dir/resume.sh"
   local bashrc="$HOME/.bashrc"
-  local start_marker="# >>> itc-bootstrap auto-resume >>>"
-  local end_marker="# <<< itc-bootstrap auto-resume <<<"
+  local start_marker="# >>> itx-bootstrap auto-resume >>>"
+  local end_marker="# <<< itx-bootstrap auto-resume <<<"
 
   mkdir -p "$resume_dir"
 
@@ -228,7 +228,7 @@ install_resume_artifacts() {
   # source-time inside the user's interactive shell — not now.
   cat > "$resume_path" <<'RESUME_EOF'
 #!/usr/bin/env bash
-# itc-bootstrap auto-resume — sourced by ~/.bashrc after phase 1.
+# itx-bootstrap auto-resume — sourced by ~/.bashrc after phase 1.
 # Prompts user to run phase 2; self-deletes (and removes bashrc hook) on Y or never.
 
 # Defense: only prompt on interactive shells with a real tty.
@@ -236,29 +236,29 @@ if [[ $- != *i* ]] || [[ ! -t 0 ]] || [[ ! -t 1 ]]; then
   return 0 2>/dev/null || exit 0
 fi
 
-_itc_resume_self="$HOME/.local/share/itc-bootstrap/resume.sh"
-_itc_bashrc="$HOME/.bashrc"
+_itx_resume_self="$HOME/.local/share/itx-bootstrap/resume.sh"
+_itx_bashrc="$HOME/.bashrc"
 
-_itc_cleanup() {
-  rm -f "$_itc_resume_self"
-  if [[ -f "$_itc_bashrc" ]]; then
-    sed -i '/^# >>> itc-bootstrap auto-resume >>>$/,/^# <<< itc-bootstrap auto-resume <<<$/d' "$_itc_bashrc"
+_itx_cleanup() {
+  rm -f "$_itx_resume_self"
+  if [[ -f "$_itx_bashrc" ]]; then
+    sed -i '/^# >>> itx-bootstrap auto-resume >>>$/,/^# <<< itx-bootstrap auto-resume <<<$/d' "$_itx_bashrc"
   fi
 }
 
-printf '\n\033[1mitc-bootstrap:\033[0m phase 1 complete. Run phase 2 (claude handoff) now? \033[33m[Y/n/never]\033[0m '
-read -r _itc_reply < /dev/tty
-case "${_itc_reply,,}" in
+printf '\n\033[1mitx-bootstrap:\033[0m phase 1 complete. Run phase 2 (claude handoff) now? \033[33m[Y/n/never]\033[0m '
+read -r _itx_reply < /dev/tty
+case "${_itx_reply,,}" in
   ""|y|yes)
-    _itc_cleanup
+    _itx_cleanup
     printf 'Running phase 2...\n\n'
     # Env-var prefix must be on `bash` (the pipeline's right-hand command that
     # executes install.sh), NOT on `curl` (which doesn't read it). Without this,
     # install.sh runs without ITC_BOOTSTRAP_AUTO_RESUME=1 and re-asks the prompts.
-    curl -fsSL "https://raw.githubusercontent.com/screpeau-itc/itc-bootstrap/main/install.sh?v=$(date +%s)" | ITC_BOOTSTRAP_AUTO_RESUME=1 bash
+    curl -fsSL "https://raw.githubusercontent.com/screpeau-itc/itx-bootstrap/main/install.sh?v=$(date +%s)" | ITC_BOOTSTRAP_AUTO_RESUME=1 bash
     ;;
   never)
-    _itc_cleanup
+    _itx_cleanup
     printf 'OK, dismissed. To finish later, re-run the install.sh curl one-liner.\n'
     ;;
   *)
@@ -266,8 +266,8 @@ case "${_itc_reply,,}" in
     ;;
 esac
 
-unset _itc_reply _itc_resume_self _itc_bashrc
-unset -f _itc_cleanup
+unset _itx_reply _itx_resume_self _itx_bashrc
+unset -f _itx_cleanup
 RESUME_EOF
   chmod 644 "$resume_path"
 
@@ -277,7 +277,7 @@ RESUME_EOF
   if ! grep -Fq "$start_marker" "$bashrc"; then
     cat >> "$bashrc" <<EOF
 $start_marker
-[[ -f "\$HOME/.local/share/itc-bootstrap/resume.sh" ]] && source "\$HOME/.local/share/itc-bootstrap/resume.sh"
+[[ -f "\$HOME/.local/share/itx-bootstrap/resume.sh" ]] && source "\$HOME/.local/share/itx-bootstrap/resume.sh"
 $end_marker
 EOF
   fi
@@ -291,8 +291,8 @@ EOF
 # Idempotent: skips if our start-marker is already present.
 install_auto_cd_to_home() {
   local bashrc="$HOME/.bashrc"
-  local start_marker="# >>> itc-bootstrap auto-cd >>>"
-  local end_marker="# <<< itc-bootstrap auto-cd <<<"
+  local start_marker="# >>> itx-bootstrap auto-cd >>>"
+  local end_marker="# <<< itx-bootstrap auto-cd <<<"
 
   touch "$bashrc"
   if ! grep -Fq "$start_marker" "$bashrc"; then
@@ -325,7 +325,7 @@ DOCKER_WAS_INSTALLED=n
 
 # Preference persistence file. Loaded before prompts (as defaults), saved
 # after prompts validate. XDG-compliant location.
-_ITC_PREFS="$HOME/.config/itc-bootstrap/preferences.env"
+_ITC_PREFS="$HOME/.config/itx-bootstrap/preferences.env"
 
 # Load remembered preferences from previous run, if present. Safe because we
 # wrote the file ourselves with simple KEY=value lines.
@@ -385,16 +385,16 @@ else
   fi
 fi
 
-# v0.4.0: admin workspace dir is now fixed. /itc-base-setup (itc-base plugin)
+# v0.4.0: admin workspace dir is now fixed. /itx-base-setup (itx-base plugin)
 # turns this into a "system admin workspace"; project work happens in
-# separate dirs created by future /itc-workspace-new (itc-base v0.2.0+).
+# separate dirs created by future /itx-workspace-new (itx-base v0.2.0+).
 WORKSPACE_DIR="$HOME/dev/itx-claude-admin"
 
 # Persist preferences IMMEDIATELY (before any install work runs). If the user
 # Ctrl-C's mid-install, their answers survive for the next attempt.
 mkdir -p "$(dirname "$_ITC_PREFS")"
 cat > "$_ITC_PREFS" <<EOF
-# itc-bootstrap remembered preferences — used as defaults on next run.
+# itx-bootstrap remembered preferences — used as defaults on next run.
 # Safe to delete; will be regenerated.
 INBOUND_SSH=$INBOUND_SSH
 WANT_DOCKER=$WANT_DOCKER
@@ -415,7 +415,7 @@ chmod 600 "$_ITC_PREFS"
 # the missing policy, configures it for real, and prompts for the password.
 # Same NOPASSWD check used at PWLESS_ALREADY_ACTIVE earlier.
 if [[ "$WANT_PASSWORDLESS_SUDO" == "y" ]]; then
-  PWLESS_FILE="/etc/sudoers.d/itc-bootstrap-$USER"
+  PWLESS_FILE="/etc/sudoers.d/itx-bootstrap-$USER"
   if sudo -n -l 2>/dev/null | grep -qE 'NOPASSWD.*ALL'; then
     info "Passwordless sudo already active for $USER — skipping setup."
   else
@@ -524,7 +524,7 @@ CLAUDE_CONFIG="$HOME/.claude.json"
 #   hasCompletedOnboarding=true + lastOnboardingVersion=<claude version>
 #     → suppresses theme picker and welcome flow
 #   officialMarketplaceAutoInstallAttempted=true + officialMarketplaceAutoInstalled=true
-#     → suppresses claude's auto-marketplace prompt (itc-base's stage-1 installs
+#     → suppresses claude's auto-marketplace prompt (itx-base's stage-1 installs
 #       plugins explicitly, so claude's auto-install doesn't need to fire)
 #
 # v0.4.5: capture claude version for lastOnboardingVersion if available, but
@@ -582,18 +582,18 @@ else
 fi
 
 # v0.4.9 / v0.4.11: pre-stage ~/.claude/settings.json with permissions.allow
-# rules for ALL bash commands the itc-base wizard invokes. Without these, the
+# rules for ALL bash commands the itx-base wizard invokes. Without these, the
 # wizard hits claude's permission gate at every bash call — even when
 # permissions.defaultMode is bypassPermissions (that mode doesn't suppress
 # bash invocations from slash-command bodies on a cold first launch).
 #
-# Enumerated from plugins/itc-base/commands/itc-base-setup.md stage-1 + each
+# Enumerated from plugins/itx-base/commands/itx-base-setup.md stage-1 + each
 # stage-2 step (model/git/perm-mode/remote-control/picker-plugins/review).
 # Keep this list in sync if the wizard adds new commands.
 CLAUDE_SETTINGS_DIR="$HOME/.claude"
 CLAUDE_SETTINGS="$CLAUDE_SETTINGS_DIR/settings.json"
 WIZARD_RULES=(
-  'Bash(bash itc-base-stage1.sh:*)'
+  'Bash(bash itx-base-stage1.sh:*)'
   'Bash(jq:*)'
   'Bash(mktemp:*)'
   'Bash(mv:*)'
@@ -1108,9 +1108,9 @@ if [[ "$WSL_CONF_WAS_WRITTEN" == "y" || "$DOCKER_WAS_INSTALLED" == "y" ]]; then
   exit 0
 fi
 
-# ─── [marketplace] Register marketplace + install itc-base ─────────────────────
+# ─── [marketplace] Register marketplace + install itx-base ─────────────────────
 
-step_start "marketplace" "Registering itc-claude-marketplace + installing itc-base"
+step_start "marketplace" "Registering itx-claude-marketplace + installing itx-base"
 
 # Configure git's credential helper to use gh's token for HTTPS GitHub
 # operations. Required for the HTTPS clone below: even public repos now
@@ -1123,30 +1123,30 @@ gh auth setup-git --hostname github.com 2>/dev/null || true
 
 # Add marketplace (idempotent: claude reports an error but doesn't break if already added)
 if claude plugin marketplace list --json 2>/dev/null \
-   | jq -e '.[] | select(.name == "itc-claude-marketplace")' >/dev/null; then
-  info "Marketplace itc-claude-marketplace already registered"
+   | jq -e '.[] | select(.name == "itx-claude-marketplace")' >/dev/null; then
+  info "Marketplace itx-claude-marketplace already registered"
 else
   # Use the HTTPS URL form (not the owner/repo short form). The short form makes
   # claude attempt an SSH clone, which fails on fresh distros that don't yet have
   # github.com's host key in ~/.ssh/known_hosts. HTTPS via gh credential helper
   # (configured above) authenticates without SSH known_hosts setup.
-  claude plugin marketplace add https://github.com/screpeau-itc/itc-claude-marketplace
+  claude plugin marketplace add https://github.com/screpeau-itc/itx-claude-marketplace
 fi
 
-# Install itc-base. Until the layer-2 batch creates this plugin, the install
+# Install itx-base. Until the layer-2 batch creates this plugin, the install
 # will fail; track success so the handoff step can degrade gracefully (launch
 # claude without the slash command rather than handing into an "Unknown
-# command: /itc-base-setup" prompt).
+# command: /itx-base-setup" prompt).
 ITC_BASE_INSTALLED=n
-if claude plugin list 2>/dev/null | grep -q "itc-base"; then
-  info "Plugin itc-base already installed"
+if claude plugin list 2>/dev/null | grep -q "itx-base"; then
+  info "Plugin itx-base already installed"
   ITC_BASE_INSTALLED=y
 else
-  if claude plugin install itc-base@itc-claude-marketplace 2>&1; then
-    info "Installed plugin: itc-base"
+  if claude plugin install itx-base@itx-claude-marketplace 2>&1; then
+    info "Installed plugin: itx-base"
     ITC_BASE_INSTALLED=y
   else
-    info "${C_YELLOW}itc-base plugin install failed — likely the plugin does not yet exist in the marketplace.${C_RESET}"
+    info "${C_YELLOW}itx-base plugin install failed — likely the plugin does not yet exist in the marketplace.${C_RESET}"
     info "${C_YELLOW}This is expected during the layer-1-only phase. Continuing.${C_RESET}"
   fi
 fi
@@ -1159,15 +1159,15 @@ step_start "handoff" "Handing off to Claude session"
 
 echo
 info "${C_GREEN}${C_BOLD}═══════════════════════════════════════════════════════${C_RESET}"
-info "${C_GREEN}${C_BOLD}  itc-bootstrap layer-1 complete.${C_RESET}"
+info "${C_GREEN}${C_BOLD}  itx-bootstrap layer-1 complete.${C_RESET}"
 info "${C_GREEN}${C_BOLD}═══════════════════════════════════════════════════════${C_RESET}"
 echo
 info "Workspace: $WORKSPACE_DIR"
-info "Marketplace: itc-claude-marketplace (registered)"
+info "Marketplace: itx-claude-marketplace (registered)"
 if [[ "$ITC_BASE_INSTALLED" == "y" ]]; then
-  info "Plugin: itc-base (installed)"
+  info "Plugin: itx-base (installed)"
 else
-  info "Plugin: itc-base ${C_YELLOW}(not yet available — layer-2 work)${C_RESET}"
+  info "Plugin: itx-base ${C_YELLOW}(not yet available — layer-2 work)${C_RESET}"
 fi
 if [[ "$WANT_DOCKER" == "y" ]]; then
   info "Docker: $(docker --version 2>/dev/null || echo 'installed')"
@@ -1210,8 +1210,8 @@ cd "$WORKSPACE_DIR"
 # claude invocations. Both inherit /dev/tty stdin explicitly.
 exec > /dev/tty 2>/dev/tty
 if [[ "$ITC_BASE_INSTALLED" == "y" ]]; then
-  exec bash -c "claude '/itc-base:itc-base-setup' < /dev/tty; echo; echo '${C_GREEN}${C_BOLD}═══ Wizard complete — launching fresh claude session... ═══${C_RESET}'; sleep 1; claude < /dev/tty"
+  exec bash -c "claude '/itx-base:itx-base-setup' < /dev/tty; echo; echo '${C_GREEN}${C_BOLD}═══ Wizard complete — launching fresh claude session... ═══${C_RESET}'; sleep 1; claude < /dev/tty"
 else
-  info "${C_YELLOW}Launching bare claude — /itc-base:itc-base-setup will be available once the itc-base plugin ships.${C_RESET}"
+  info "${C_YELLOW}Launching bare claude — /itx-base:itx-base-setup will be available once the itx-base plugin ships.${C_RESET}"
   exec claude < /dev/tty
 fi
