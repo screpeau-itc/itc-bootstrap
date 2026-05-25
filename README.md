@@ -1,13 +1,13 @@
-# itc-bootstrap
+# itx-bootstrap
 
-Cold-start installer that takes a bare Ubuntu/Debian (including a fresh WSL distro) from `apt update` to a working Claude Code state with the `itc-claude-marketplace` registered and the `itc-base` plugin installed.
+Cold-start installer that takes a bare Ubuntu/Debian (including a fresh WSL distro) from `apt update` to a working Claude Code state with the `itx-claude-marketplace` registered and the `itx-base` plugin installed.
 
 After this installer finishes, you have:
 - A `~/dev/itx-claude-admin/` folder (the system admin workspace) pre-trusted in Claude Code's config
 - Claude CLI installed and authenticated to your Anthropic account
 - GitHub CLI installed and authenticated with scopes `repo,workflow,read:org,read:public_key`
 - (Optional) An SSH server with your GitHub-registered public keys in `authorized_keys`
-- A Claude Code session opened in `~/dev/itx-claude-admin/`, running `/itc-base-setup` (from itc-base v0.1.0) for the layer-2 setup
+- A Claude Code session opened in `~/dev/itx-claude-admin/`, running `/itx-base-setup` (from itx-base v0.1.0) for the layer-2 setup
 
 ## Quick start
 
@@ -16,19 +16,19 @@ On a freshly-installed Ubuntu/Debian (or WSL distro), paste this into your termi
 ```bash
 sudo apt update && sudo apt upgrade -y
 sudo apt install -y curl
-curl -fsSL "https://raw.githubusercontent.com/screpeau-itc/itc-bootstrap/main/install.sh?v=$(date +%s)" | bash
+curl -fsSL "https://raw.githubusercontent.com/screpeau-itc/itx-bootstrap/main/install.sh?v=$(date +%s)" | bash
 ```
 
 The installer asks two questions upfront (inbound SSH, install Docker), then runs uninterrupted until it pauses for Claude Code's browser authentication and GitHub's browser authentication. Plan ~15–20 minutes for the full run.
 
 **Phase split (v0.3.0+):** On a fresh-distro install, the installer pauses after the Docker step, installs a tiny `~/.bashrc` hook, and prints restart instructions. After you run `wsl --shutdown ; wsl -d Ubuntu` from PowerShell (use `;` not `&&` — Windows PS 5.1 doesn't support `&&`), the next interactive bash login prompts `[Y/n/never]` to finish setup. Yes runs the Claude handoff in a fully-active shell (systemd up, docker group live, PATH set); the bashrc hook then removes itself. Re-runs on an already-configured distro never trigger this split — the installer flows straight through with no extra ceremony.
 
-**Preference memory (v0.3.0+):** Your answers to the three prompts persist in `~/.config/itc-bootstrap/preferences.env` and become the defaults on subsequent runs. Safe to delete to reset.
+**Preference memory (v0.3.0+):** Your answers to the three prompts persist in `~/.config/itx-bootstrap/preferences.env` and become the defaults on subsequent runs. Safe to delete to reset.
 
 ## What the installer does
 
 1. **Detects** distro (Ubuntu/Debian only — bails on others with manual-mode pointer) and environment (WSL, Docker, LXC, VM, native).
-2. **Asks** three quick questions: enable inbound SSH (default Yes on WSL/Docker/LXC/VM, No on native), install Docker (default Yes), set up passwordless sudo (default Yes — recommended for unattended install; writes `/etc/sudoers.d/itc-bootstrap-<your-user>`). (v0.4.0+: workspace-name prompt removed — the admin workspace dir is now always `~/dev/itx-claude-admin/`. v0.4.2+: passwordless sudo prompt added.)
+2. **Asks** three quick questions: enable inbound SSH (default Yes on WSL/Docker/LXC/VM, No on native), install Docker (default Yes), set up passwordless sudo (default Yes — recommended for unattended install; writes `/etc/sudoers.d/itx-bootstrap-<your-user>`). (v0.4.0+: workspace-name prompt removed — the admin workspace dir is now always `~/dev/itx-claude-admin/`. v0.4.2+: passwordless sudo prompt added.)
 3. **Installs base packages**: `build-essential git ca-certificates gnupg lsb-release jq tmux unzip python3-pip python3-venv pipx`.
 4. **Writes `/etc/wsl.conf`** (WSL only): enables systemd, sets default user, mounts `/mnt/c` **read-only** (Windows files visible but not writable from WSL), disables Windows PATH inheritance.
 5. **Creates the admin workspace directory** at `~/dev/itx-claude-admin/`.
@@ -38,16 +38,16 @@ The installer asks two questions upfront (inbound SSH, install Docker), then run
 9. **Installs GitHub CLI** and runs `gh auth login --scopes repo,workflow,read:org,read:public_key`.
 10. **Configures inbound SSH** (if enabled): installs `openssh-server`, fetches your GitHub-registered SSH pubkeys, lets you pick which to install in `~/.ssh/authorized_keys`. Optional: add another GitHub user's keys.
 11. **Installs Docker** (if enabled): `docker-ce` + `docker-compose-plugin` from Docker's official apt repo, adds your user to the `docker` group, enables the service via systemd. On a freshly-WSL-configured distro, the service starts after the first `wsl --shutdown`.
-12. **Registers `itc-claude-marketplace`** and attempts to install the `itc-base` plugin (gracefully degrades if the plugin isn't yet published).
-13. **Hands off** to a Claude session opened in your workspace — invoking `/itc-base-setup` if the plugin is available, otherwise launching bare claude.
+12. **Registers `itx-claude-marketplace`** and attempts to install the `itx-base` plugin (gracefully degrades if the plugin isn't yet published).
+13. **Hands off** to a Claude session opened in your workspace — invoking `/itx-base-setup` if the plugin is available, otherwise launching bare claude.
 
 ## What this does NOT do
 
-This installer is intentionally minimal. The following are deferred to layer-2 work (the `itc-base` plugin's `/itc-base-setup` skill) or to role-specific plugins:
+This installer is intentionally minimal. The following are deferred to layer-2 work (the `itx-base` plugin's `/itx-base-setup` skill) or to role-specific plugins:
 
 - Git identity (`user.name`, `user.email`)
 - Outbound SSH key generation (only set up when a specific workflow needs it)
-- Cloning project repos (the `itc-workspace` plugin handles ispe; other plugins handle their respective repos)
+- Cloning project repos (the `itx-workspace` plugin handles ispe; other plugins handle their respective repos)
 - Role-specific tooling — Go, Playwright, postgresql-client, Grafana stack — all live in opt-in plugins
 - `~/.claude/settings.json` customization beyond the trust config
 - Custom hooks
@@ -171,15 +171,15 @@ sudo systemctl enable --now docker
 ### 10. Marketplace + base plugin
 
 ```bash
-claude plugin marketplace add screpeau-itc/itc-claude-marketplace
-claude plugin install itc-base@itc-claude-marketplace
+claude plugin marketplace add screpeau-itc/itx-claude-marketplace
+claude plugin install itx-base@itx-claude-marketplace
 ```
 
 ### 11. Open the workspace
 
 ```bash
 cd ~/dev/itx-claude-admin
-claude "/itc-base-setup"
+claude "/itx-base-setup"
 ```
 
 ## Troubleshooting
@@ -188,7 +188,7 @@ claude "/itc-base-setup"
 
 **Script fails partway, want to re-run**: every step is idempotent. Fix the underlying issue (network, auth, etc.) and re-run the curl-pipe-bash recipe. Already-completed steps will print `○ skipped`.
 
-**`claude plugin install itc-base` reports "plugin not found"**: expected during the layer-1-only phase. The `itc-base` plugin is being built in a follow-up batch. The installer treats this as a non-fatal warning and continues to the hand-off step, where you'll land in a Claude session that can be used immediately even without the plugin installed.
+**`claude plugin install itx-base` reports "plugin not found"**: expected during the layer-1-only phase. The `itx-base` plugin is being built in a follow-up batch. The installer treats this as a non-fatal warning and continues to the hand-off step, where you'll land in a Claude session that can be used immediately even without the plugin installed.
 
 **Inbound SSH on WSL: "I can't reach it from my phone / another machine"**: WSL2 networking is NAT'd behind the Windows host. The SSH server's IP (printed at the end of the install) is reachable from the Windows host only, and rerolls each `wsl --shutdown`. External reach requires `netsh portproxy` on the Windows side (not recommended) or ZeroTier inside the distro (deferred — see the spec).
 
@@ -199,11 +199,11 @@ claude "/itc-base-setup"
 **Got the "Phase 1 has already completed" message and don't want to restart**: this guard prevents you from running the installer twice without restarting between phases (which would defeat the phase split). Either restart WSL as instructed, OR remove the marker manually and re-run:
 
 ```bash
-rm ~/.local/share/itc-bootstrap/resume.sh
-sed -i '/^# >>> itc-bootstrap auto-resume >>>$/,/^# <<< itc-bootstrap auto-resume <<<$/d' ~/.bashrc
+rm ~/.local/share/itx-bootstrap/resume.sh
+sed -i '/^# >>> itx-bootstrap auto-resume >>>$/,/^# <<< itx-bootstrap auto-resume <<<$/d' ~/.bashrc
 ```
 
-**Want to reset remembered preferences**: delete `~/.config/itc-bootstrap/preferences.env`. The next run will show hardcoded defaults instead.
+**Want to reset remembered preferences**: delete `~/.config/itx-bootstrap/preferences.env`. The next run will show hardcoded defaults instead.
 
 ## License
 
@@ -211,5 +211,5 @@ MIT — see [LICENSE](LICENSE).
 
 ## Related
 
-- [`screpeau-itc/itc-claude-marketplace`](https://github.com/screpeau-itc/itc-claude-marketplace) — the Claude Code marketplace this installer registers (currently private; access required).
-- ispe (`itx-shared-programing-environment`) — the operator's workspace itself; cloned by the future `itc-workspace` plugin.
+- [`screpeau-itc/itx-claude-marketplace`](https://github.com/screpeau-itc/itx-claude-marketplace) — the Claude Code marketplace this installer registers (currently private; access required).
+- ispe (`itx-shared-programing-environment`) — the operator's workspace itself; cloned by the future `itx-workspace` plugin.
