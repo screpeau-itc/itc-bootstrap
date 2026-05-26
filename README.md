@@ -205,6 +205,69 @@ sed -i '/^# >>> itx-bootstrap auto-resume >>>$/,/^# <<< itx-bootstrap auto-resum
 
 **Want to reset remembered preferences**: delete `~/.config/itx-bootstrap/preferences.env`. The next run will show hardcoded defaults instead.
 
+## Doctor mode
+
+`itx-doctor` audits a machine for the prereqs every ITC `itx-*` workflow assumes
+(Python, Node, git, gh, claude CLI, marketplace registration, etc.) and either
+reports gaps or installs them with operator approval. Three entry points -- pick
+the one that matches your platform:
+
+### Linux/WSL (Ubuntu/Debian)
+
+Re-use this bootstrap repo's `install.sh` with `--doctor`:
+
+```bash
+curl -fsSL "https://raw.githubusercontent.com/screpeau-itc/itx-bootstrap/main/install.sh?v=$(date +%s)" | bash -s -- --doctor
+```
+
+Or after cloning:
+
+```bash
+./install.sh --doctor          # default: prompt-to-fix per gap
+./install.sh --doctor --no-fix # audit only; scriptable
+./install.sh --doctor --yes    # unattended fix
+./install.sh --doctor --json   # machine-readable output
+```
+
+### macOS + non-Ubuntu Linux
+
+```bash
+curl -fsSL "https://raw.githubusercontent.com/screpeau-itc/itx-bootstrap/main/itx-doctor.sh?v=$(date +%s)" | bash
+```
+
+Or after cloning this repo:
+
+```bash
+./itx-doctor.sh
+```
+
+### Windows
+
+From PowerShell 5.1+ or pwsh:
+
+```powershell
+iex (iwr "https://raw.githubusercontent.com/screpeau-itc/itx-bootstrap/main/itx-doctor.ps1?v=$(Get-Date -UFormat %s)").Content
+```
+
+Or after cloning this repo:
+
+```powershell
+.\itx-doctor.ps1
+```
+
+### In-Claude
+
+Once `claude` CLI and the `itx-doctor` plugin are installed (any of the
+entry points above accomplish this), from any Claude Code session:
+
+```
+/itx-doctor:itx-doctor
+```
+
+Same flags as the shell entries. See the plugin's README at
+[plugins/itx-doctor/README.md](https://github.com/screpeau-itc/itx-claude-marketplace/tree/main/plugins/itx-doctor/README.md)
+for the full flag list.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
