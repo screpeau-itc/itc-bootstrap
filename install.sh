@@ -61,6 +61,75 @@ if [[ -f "$HOME/.local/share/itx-bootstrap/resume.sh" ]]; then
   exit 0
 fi
 
+# ─── Doctor mode (--doctor) ────────────────────────────────────────────────────
+#
+# Short-circuit the bootstrap when invoked with --doctor: audit + heal
+# prereqs on an existing machine instead of full bootstrap. This branch
+# requires the base packages (python3, python-is-python3, claude CLI) but
+# does NOT touch /etc/wsl.conf, docker, or any of the bootstrap-only steps.
+#
+# Usage:
+#   ./install.sh --doctor               # default: prompt-to-fix per gap
+#   ./install.sh --doctor --no-fix      # audit only; scriptable
+#   ./install.sh --doctor --yes         # unattended fix
+#   ./install.sh --doctor --json        # machine-readable output
+#
+# Any args after --doctor pass through to the doctor engine.
+
+DOCTOR_MODE=n
+DOCTOR_ARGS=()
+for arg in "$@"; do
+  if [[ "$arg" == "--doctor" ]]; then
+    DOCTOR_MODE=y
+    continue
+  fi
+  if [[ "$DOCTOR_MODE" == "y" ]]; then
+    DOCTOR_ARGS+=("$arg")
+  fi
+done
+
+if [[ "$DOCTOR_MODE" == "y" ]]; then
+  # Ensure Python on PATH. If absent, install minimal python3 via apt.
+  if ! command -v python >/dev/null 2>&1 && ! command -v python3 >/dev/null 2>&1; then
+    echo "[doctor] Python missing; installing python3 + python-is-python3 via apt..."
+    sudo apt-get update -qq
+    sudo apt-get install -y python3 python-is-python3
+  fi
+  PY="$(command -v python3 || command -v python)"
+
+  # Ensure claude CLI on PATH (doctor itself can install it once it's running,
+  # but we need claude to install the doctor plugin in the first place).
+  if ! command -v claude >/dev/null 2>&1; then
+    echo "[doctor] claude CLI missing; installing via the native installer..."
+    curl -fsSL https://claude.ai/install.sh | bash
+    export PATH="$HOME/.local/bin:$PATH"
+    hash -r
+  fi
+
+  # Ensure itx-claude-marketplace is registered.
+  if ! claude plugin marketplace list --json 2>/dev/null | "$PY" -c \
+       "import sys,json; sys.exit(0 if any(p.get('name')=='itx-claude-marketplace' for p in json.load(sys.stdin)) else 1)"; then
+    echo "[doctor] Registering itx-claude-marketplace..."
+    claude plugin marketplace add https://github.com/screpeau-itc/itx-claude-marketplace
+  fi
+
+  # Install itx-doctor plugin if missing.
+  if ! claude plugin list 2>/dev/null | grep -q "itx-doctor"; then
+    echo "[doctor] Installing itx-doctor plugin..."
+    claude plugin install itx-doctor@itx-claude-marketplace
+  fi
+
+  DOCTOR_PY="$($PY -c "from pathlib import Path; print(str(Path.home() / '.claude' / 'plugins' / 'marketplaces' / 'itx-claude-marketplace' / 'plugins' / 'itx-doctor' / 'bin' / 'itx_doctor.py'))")"
+  if [[ ! -f "$DOCTOR_PY" ]]; then
+    echo "ERR: itx-doctor plugin not found at $DOCTOR_PY after install" >&2
+    exit 1
+  fi
+
+  exec "$PY" "$DOCTOR_PY" "${DOCTOR_ARGS[@]}"
+fi
+
+# ─── (end doctor mode; bootstrap flow continues below) ────────────────────────
+
 # Ensure ~/.local/bin is on PATH for the duration of this script. We're invoked
 # via `curl ... | bash`, which is non-interactive — bash skips ~/.bashrc, so
 # even though the claude native installer added the export there, this shell
